@@ -84,6 +84,10 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(styles, /\.citation-list/);
   assert.match(styles, /\.message-bubble p/);
   assert.match(styles, /font-size: 15px/);
+  assert.match(styles, /\.learning-heading span[\s\S]*font-family: Arial, Helvetica, sans-serif/);
+  assert.match(styles, /\.quiz-card h4[\s\S]*font-family: Arial, Helvetica, sans-serif/);
+  assert.match(styles, /\.flashcard p[\s\S]*font-family: Arial, Helvetica, sans-serif/);
+  assert.doesNotMatch(styles, /\.flashcard p[\s\S]*Georgia/);
   assert.match(styles, /\.annotation-layer/);
   assert.match(styles, /\.page-note/);
   assert.match(styles, /\.page-image/);

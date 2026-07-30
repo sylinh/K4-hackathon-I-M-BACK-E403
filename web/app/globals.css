@@ -2050,13 +2050,16 @@ input:focus-visible {
 
 .learning-heading span {
   color: var(--blue);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .learning-heading h3 {
   margin: 5px 0 0;
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 17px;
   letter-spacing: -0.03em;
 }
@@ -2094,14 +2097,17 @@ input:focus-visible {
 
 .question-label {
   color: var(--blue);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.1em;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .quiz-card h4 {
   margin: 8px 0 15px;
-  font-size: 13px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
   line-height: 1.45;
 }
 
@@ -2140,7 +2146,8 @@ input:focus-visible {
 .answer-list button p {
   flex: 1;
   margin: 0;
-  font-size: 9px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 13px;
   line-height: 1.4;
 }
 
@@ -2381,9 +2388,9 @@ input:focus-visible {
 .flashcard p {
   margin: 10px 0;
   color: var(--ink);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 14px;
-  line-height: 1.35;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.45;
 }
 
 .flashcard small {

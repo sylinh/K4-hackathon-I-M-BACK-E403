@@ -2972,7 +2972,7 @@ export default function Home() {
               <>
                 <div className="learning-heading">
                   <div>
-                    <span>QUIZ THEO NGỮ CẢNH</span>
+                    <span>Quiz theo ngữ cảnh</span>
                     <h3>Kiểm tra hiểu thật</h3>
                   </div>
                   <span className="quiz-count">
@@ -3097,7 +3097,7 @@ export default function Home() {
               <>
                 <div className="learning-heading">
                   <div>
-                    <span>FLASHCARD THEO NGỮ CẢNH</span>
+                    <span>Flashcard theo ngữ cảnh</span>
                     <h3>Ôn lại điểm quan trọng</h3>
                   </div>
                   <span className="quiz-count">
