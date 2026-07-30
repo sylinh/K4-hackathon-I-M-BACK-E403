@@ -5,6 +5,7 @@ import dayTwoTranscript from "../../../content/transcript-01-clean.md?raw";
 type AgentMode = "chat" | "quiz" | "flashcards";
 
 const QUIZ_COUNT = 15;
+const FLASHCARD_COUNT = 20;
 type SourceScope = "current-page" | "all-document";
 type ResponseLanguage = "vi" | "en";
 
@@ -576,7 +577,7 @@ function fallbackFlashcards(
   language: ResponseLanguage,
 ) {
   if (chunks.length === 0) return [];
-  return Array.from({ length: 5 }, (_, index) => {
+  return Array.from({ length: FLASHCARD_COUNT }, (_, index) => {
     const chunk = chunks[index % chunks.length];
     return {
       front:
@@ -670,7 +671,7 @@ answer là chỉ số 0-3. Mỗi câu chỉ có một đáp án đúng và khôn
   if (mode === "flashcards") {
     return `${common}
 
-Tạo 5 thẻ nhớ ngắn gọn. Trả về JSON thuần:
+Tạo ${FLASHCARD_COUNT} thẻ nhớ ngắn gọn. Trả về JSON thuần:
 {"flashcards":[{"front":"...","back":"...","citation":"${citationFormat}"}]}`;
   }
   return `${common}
@@ -730,8 +731,8 @@ function schemaForMode(mode: AgentMode) {
       properties: {
         flashcards: {
           type: "array",
-          minItems: 5,
-          maxItems: 5,
+          minItems: FLASHCARD_COUNT,
+          maxItems: FLASHCARD_COUNT,
           items: {
             type: "object",
             properties: {
@@ -1008,7 +1009,7 @@ export async function POST(request: Request) {
     if (mode === "flashcards") {
       const flashcards =
         Array.isArray(liveResult?.flashcards) &&
-        liveResult.flashcards.length === 5 &&
+        liveResult.flashcards.length === FLASHCARD_COUNT &&
         liveResult.flashcards.every(
           (item) =>
             item &&
@@ -1016,7 +1017,7 @@ export async function POST(request: Request) {
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
         )
-        ? liveResult.flashcards.slice(0, 5)
+        ? liveResult.flashcards.slice(0, FLASHCARD_COUNT)
         : fallbackFlashcards(primaryChunks, language);
       return Response.json({ flashcards, live: Boolean(liveResult) });
     }
