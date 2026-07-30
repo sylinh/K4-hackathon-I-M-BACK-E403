@@ -3,7 +3,7 @@
   "stage": "03-grounding-quality",
   "runId": "2026-07-30T15-48-12-952Z",
   "generatedAt": "2026-07-30T15:48:12.952Z",
-  "report": "v3-grounding-quality/2026-07-30T15-48-12-952Z.json",
+  "report": "2026-07-30T15-48-12-952Z.json",
   "summary": {
     "total": 50,
     "passed": 50,

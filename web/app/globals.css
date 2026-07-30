@@ -713,11 +713,19 @@ input:focus-visible {
   background: #ffffff;
 }
 
-.pdf-native-page > img {
+.pdf-canvas-surface {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.pdf-canvas-surface > canvas {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
   pointer-events: none;
   user-select: none;
 }
@@ -793,34 +801,86 @@ input:focus-visible {
   }
 }
 
+.pdf-render-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 10px;
+  margin: 0;
+  padding: 24px;
+  background: #ffffff;
+  color: #8b2f24;
+  font-size: 12px;
+  text-align: center;
+}
+
+.pdf-render-error p {
+  margin: 0;
+}
+
+.pdf-render-error button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid #d89990;
+  border-radius: 9px;
+  background: #fff7f5;
+  color: #8b2f24;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .pdf-text-layer {
   position: absolute;
   inset: 0;
+  z-index: 2;
   overflow: hidden;
   user-select: text;
+  -webkit-user-select: text;
   cursor: text;
+  touch-action: pan-y pinch-zoom;
 }
 
 .pdf-text-layer span {
   position: absolute;
   display: block;
-  overflow: hidden;
   color: transparent;
   line-height: 1;
   white-space: pre;
   transform-origin: left top;
   user-select: text;
+  -webkit-user-select: text;
   cursor: text;
+  pointer-events: auto;
+  transition:
+    background 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.document-page.highlight-mode .pdf-text-layer span:hover {
+  border-radius: 2px;
+  background: rgba(255, 221, 73, 0.18);
+  box-shadow: 0 0 0 1px rgba(223, 178, 0, 0.16);
+}
+
+.document-page.read-mode .pdf-text-layer {
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .pdf-text-layer span::selection {
-  background: rgba(255, 216, 58, 0.64);
+  background: rgba(255, 205, 33, 0.78);
   color: transparent;
 }
 
 .pdf-text-layer span.is-highlighted {
   border-radius: 2px;
-  background: rgba(255, 216, 58, 0.46) !important;
+  background: rgba(255, 216, 58, 0.48) !important;
+  box-shadow: inset 0 -1px 0 rgba(170, 122, 0, 0.32);
+  mix-blend-mode: multiply;
 }
 
 .native-page-label {
@@ -1404,6 +1464,43 @@ input:focus-visible {
   font-size: 10px;
   line-height: 1.55;
   white-space: pre-wrap;
+}
+
+.answer-evidence {
+  display: grid;
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.answer-evidence strong,
+.answer-level strong,
+.answer-note strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--ink);
+  font-size: 8px;
+  text-transform: uppercase;
+}
+
+.answer-evidence p,
+.message-bubble .answer-level,
+.message-bubble .answer-note {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.message-bubble .answer-level,
+.message-bubble .answer-note {
+  margin-top: 8px;
+}
+
+.message-bubble .answer-note {
+  padding: 7px;
+  border-left: 2px solid var(--amber);
+  background: #fff8e8;
+  color: var(--ink);
 }
 
 .citation {

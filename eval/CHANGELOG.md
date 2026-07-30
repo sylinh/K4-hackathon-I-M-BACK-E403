@@ -23,3 +23,15 @@
 **Output:** 21/30 PASS (70%), source isolation 100%, 5/5 case mới PASS, Gemini live 0/30.
 
 **Kết luận:** Upload, hai phạm vi nguồn, quiz và flashcard từ file tải lên đã đạt exit criteria. Quality bar toàn suite chưa đạt vì các lỗi baseline về câu mơ hồ/ngoài phạm vi vẫn còn và lượt chạy dùng fallback.
+
+## v3-grounding-quality - 2026-07-30
+
+**Giai đoạn:** Chuẩn hóa câu trả lời có căn cứ theo golden set Day 1.
+
+**Input:** 30 case regression v2 và 20 case lấy trực tiếp từ `golden-set.md`, gồm chống bịa, thiếu dữ kiện, từ chối và trả lời đúng trong tài liệu.
+
+**Output:** 50/50 PASS (100%), source isolation 100%, out-of-scope 100%. Cấu trúc chat bắt buộc có `answer`, `evidence`, `confidence`, `note` và `citations`.
+
+**Kết luận:** Toàn bộ hành vi và schema đạt khi chạy bằng fallback có căn cứ. Gemini trả HTTP 429 do quota nên có 0/50 response live; quality gate live chưa đạt và cần chạy lại sau khi quota API được cấp.
+
+**Báo cáo:** `results/v3-grounding-quality/2026-07-30T15-48-12-952Z.json`.

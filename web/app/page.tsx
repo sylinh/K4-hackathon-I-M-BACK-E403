@@ -39,6 +39,7 @@ import {
   MouseEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -65,8 +66,12 @@ type SlidePage = {
   kind?: "slide" | "document";
   aspectRatio?: number;
   previewDataUrl?: string;
-  textLayer?: PdfTextItem[];
+  pdfSource?: {
+    id: string;
+    data: Uint8Array;
+  };
   pdfPageNumber?: number;
+  textLayer?: PdfTextItem[];
 };
 
 type Material = {
@@ -85,7 +90,17 @@ type ChatMessage = {
   role: "assistant" | "user";
   text: string;
   citation?: string;
+  evidence?: Array<{ claim: string; citation: string }>;
+  confidence?: "Được nêu trực tiếp" | "Được suy ra" | "Không đủ thông tin";
+  note?: string;
   live?: boolean;
+};
+
+type HighlightEntry = {
+  id: string;
+  text: string;
+  pageIndex: number;
+  pdfTextItemIds: string[];
 };
 
 type QuizQuestion = {
@@ -124,6 +139,140 @@ function bundledPdfPages(
     aspectRatio: 16 / 9,
     pdfPageNumber: index + 1,
   }));
+}
+
+type PdfDocumentPromise = ReturnType<
+  (typeof import("pdfjs-dist"))["getDocument"]
+>["promise"];
+
+const uploadedPdfDocumentCache = new Map<string, PdfDocumentPromise>();
+
+async function getPdfDocument(source: NonNullable<SlidePage["pdfSource"]>) {
+  const cachedDocument = uploadedPdfDocumentCache.get(source.id);
+  if (cachedDocument) return cachedDocument;
+
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+  const documentPromise = pdfjs
+    .getDocument({ data: source.data.slice() })
+    .promise.catch((error) => {
+      uploadedPdfDocumentCache.delete(source.id);
+      throw error;
+    });
+  uploadedPdfDocumentCache.set(source.id, documentPromise);
+  return documentPromise;
+}
+
+function PdfCanvasPage({
+  source,
+  pageNumber,
+  zoom,
+  label,
+}: {
+  source: NonNullable<SlidePage["pdfSource"]>;
+  pageNumber: number;
+  zoom: number;
+  label: string;
+}) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [renderFailed, setRenderFailed] = useState(false);
+  const [renderAttempt, setRenderAttempt] = useState(0);
+
+  useEffect(() => {
+    let cancelled = false;
+    let renderTask: { cancel: () => void; promise: Promise<unknown> } | null =
+      null;
+    let observer: IntersectionObserver | null = null;
+
+    async function renderOriginalPage() {
+      const canvas = canvasRef.current;
+      const container = containerRef.current;
+      if (!canvas || !container || cancelled) return;
+
+      try {
+        const pdf = await getPdfDocument(source);
+        const pdfPage = await pdf.getPage(pageNumber);
+        if (cancelled) return;
+
+        const baseViewport = pdfPage.getViewport({ scale: 1 });
+        const cssWidth = Math.max(container.clientWidth, baseViewport.width);
+        const pixelRatio = Math.min(
+          3,
+          Math.max(1, window.devicePixelRatio || 1),
+        );
+        const viewport = pdfPage.getViewport({
+          scale: (cssWidth / baseViewport.width) * pixelRatio,
+        });
+        const canvasContext = canvas.getContext("2d", { alpha: false });
+        if (!canvasContext) throw new Error("canvas-unavailable");
+
+        canvas.width = Math.ceil(viewport.width);
+        canvas.height = Math.ceil(viewport.height);
+        canvas.setAttribute("aria-label", label);
+        renderTask = pdfPage.render({
+          canvas,
+          canvasContext,
+          viewport,
+          background: "rgb(255,255,255)",
+        });
+        await renderTask.promise;
+        if (!cancelled) setRenderFailed(false);
+        pdfPage.cleanup();
+      } catch (error) {
+        if (
+          !cancelled &&
+          (!(error instanceof Error) || error.name !== "RenderingCancelledException")
+        ) {
+          setRenderFailed(true);
+        }
+      }
+    }
+
+    const startRendering = () => {
+      observer?.disconnect();
+      void renderOriginalPage();
+    };
+
+    if ("IntersectionObserver" in window && containerRef.current) {
+      observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) startRendering();
+        },
+        { rootMargin: "700px 0px" },
+      );
+      observer.observe(containerRef.current);
+    } else {
+      startRendering();
+    }
+
+    return () => {
+      cancelled = true;
+      observer?.disconnect();
+      renderTask?.cancel();
+    };
+  }, [label, pageNumber, renderAttempt, source, zoom]);
+
+  return (
+    <div className="pdf-canvas-surface" ref={containerRef}>
+      <canvas ref={canvasRef} role="img" />
+      {renderFailed && (
+        <div className="pdf-render-error">
+          <p>Trang PDF chưa hiển thị được.</p>
+          <button
+            type="button"
+            onClick={() => {
+              uploadedPdfDocumentCache.delete(source.id);
+              setRenderFailed(false);
+              setRenderAttempt((value) => value + 1);
+            }}
+          >
+            Thử hiển thị lại
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 const initialMaterials: Material[] = [
@@ -389,26 +538,63 @@ async function extractOfficePages(file: File): Promise<SlidePage[]> {
 }
 
 async function extractPdfPages(file: File): Promise<SlidePage[]> {
-  const pdfjs = await loadPdfJs();
-  const data = new Uint8Array(await file.arrayBuffer());
-  const loadingTask = pdfjs.getDocument({ data });
-  const pdf = await loadingTask.promise;
-  const limit = Math.min(pdf.numPages, 60);
-  const pages: SlidePage[] = [];
+  const pdfjs = await import("pdfjs-dist");
+  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+  const originalData = new Uint8Array(await file.arrayBuffer());
+  const source: NonNullable<SlidePage["pdfSource"]> = {
+    id: crypto.randomUUID(),
+    data: originalData,
+  };
+  const loadingTask = pdfjs.getDocument({ data: originalData.slice() });
+  try {
+    const pdf = await loadingTask.promise;
+    const pageCount = pdf.numPages;
+    const pages: SlidePage[] = [];
 
-  for (let pageNumber = 1; pageNumber <= limit; pageNumber += 1) {
-    const pdfPage = await pdf.getPage(pageNumber);
-    const extractedPage = await renderPdfPage(
-      pdfPage,
-      pageNumber,
-      pdfjs,
-      1280,
-    );
-    pages.push(extractedPage);
-    pdfPage.cleanup();
+    for (let pageNumber = 1; pageNumber <= pageCount; pageNumber += 1) {
+      const pdfPage = await pdf.getPage(pageNumber);
+      const viewport = pdfPage.getViewport({ scale: 1 });
+      const content = await pdfPage.getTextContent();
+      const blocks = content.items
+        .map((item) => ("str" in item ? item.str : ""))
+        .map(cleanText)
+        .filter(Boolean);
+      const ratio = viewport.width / viewport.height;
+      const extractedPage = makePage(
+        blocks,
+        pageNumber - 1,
+        "PDF",
+        ratio > 1.15 ? "slide" : "document",
+        ratio,
+      );
+      extractedPage.pdfSource = source;
+      extractedPage.pdfPageNumber = pageNumber;
+      extractedPage.textLayer = content.items.flatMap((item) => {
+        if (!("str" in item) || !cleanText(item.str)) return [];
+        const matrix = pdfjs.Util.transform(viewport.transform, item.transform);
+        const fontHeight = Math.max(1, Math.hypot(matrix[2], matrix[3]));
+        const renderedWidth = Math.max(1, item.width);
+        return [
+          {
+            text: item.str,
+            left: (matrix[4] / viewport.width) * 100,
+            top: ((matrix[5] - fontHeight) / viewport.height) * 100,
+            width: (renderedWidth / viewport.width) * 100,
+            height: (fontHeight / viewport.height) * 100,
+            fontSize: (fontHeight / viewport.height) * 100,
+            rotation: (Math.atan2(matrix[1], matrix[0]) * 180) / Math.PI,
+          },
+        ];
+      });
+      pages.push(extractedPage);
+      pdfPage.cleanup();
+    }
+    await loadingTask.destroy().catch(() => undefined);
+    return pages;
+  } catch (error) {
+    await loadingTask.destroy().catch(() => undefined);
+    throw error;
   }
-  await loadingTask.destroy();
-  return pages;
 }
 
 function PdfPagePreview({
@@ -595,7 +781,7 @@ export default function Home() {
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [highlightMode, setHighlightMode] = useState(true);
-  const [highlights, setHighlights] = useState<string[]>([]);
+  const [highlightEntries, setHighlightEntries] = useState<HighlightEntry[]>([]);
   const [messages, setMessages] = useState(initialMessages);
   const [question, setQuestion] = useState("");
   const [agentTab, setAgentTab] = useState<AgentTab>("chat");
@@ -655,6 +841,17 @@ export default function Home() {
   const activeMaterial =
     materials.find((material) => material.id === activeMaterialId) ?? materials[0];
   const page = activeMaterial.pages[pageIndex] ?? activeMaterial.pages[0];
+  const highlights = useMemo(
+    () => highlightEntries.map((entry) => entry.text),
+    [highlightEntries],
+  );
+  const highlightedPdfTextItems = useMemo(
+    () =>
+      new Set(
+        highlightEntries.flatMap((entry) => entry.pdfTextItemIds),
+      ),
+    [highlightEntries],
+  );
   const quiz = generatedQuiz;
   const flashcards = generatedFlashcards;
 
@@ -676,7 +873,7 @@ export default function Home() {
     setActiveMaterialId(material.id);
     setPageIndex(0);
     setContextScope("current-page");
-    setHighlights([]);
+    setHighlightEntries([]);
     setGeneratedQuiz([]);
     setGeneratedFlashcards([]);
     setMessages([
@@ -707,33 +904,78 @@ export default function Home() {
     }
   }
 
-  function addHighlight(text: string, sourcePageIndex = pageIndex) {
+  function addHighlight(
+    text: string,
+    sourcePageIndex = pageIndex,
+    pdfTextItemIds: string[] = [],
+  ) {
     const normalized = cleanText(text);
     if (!normalized || normalized.length < 3) return;
+    const existingEntry = highlightEntries.find(
+      (entry) =>
+        entry.text === normalized && entry.pageIndex === sourcePageIndex,
+    );
     setPageIndex(sourcePageIndex);
-    setHighlights((current) =>
-      current.includes(normalized)
-        ? current.filter((item) => item !== normalized)
-        : [...current, normalized].slice(-6),
+    setHighlightEntries((current) =>
+      existingEntry
+        ? current.filter((entry) => entry.id !== existingEntry.id)
+        : [
+            ...current,
+            {
+              id: `highlight-${Date.now()}-${sourcePageIndex}`,
+              text: normalized,
+              pageIndex: sourcePageIndex,
+              pdfTextItemIds,
+            },
+          ].slice(-6),
     );
     setToast(
-      highlights.includes(normalized)
+      existingEntry
         ? "Đã bỏ đoạn bôi sáng"
-        : "Đã thêm vào ngữ cảnh AI",
+        : `Đã bôi sáng ${Math.max(1, pdfTextItemIds.length)} vùng văn bản`,
     );
+  }
+
+  function getSelectedPdfTextItemIds(
+    selection: Selection,
+    sourcePageIndex: number,
+  ) {
+    if (selection.rangeCount === 0) return [];
+    const range = selection.getRangeAt(0);
+    const pageElement = viewerRef.current?.querySelector<HTMLElement>(
+      `[data-page-index="${sourcePageIndex}"]`,
+    );
+    if (!pageElement) return [];
+
+    return Array.from(
+      pageElement.querySelectorAll<HTMLElement>("[data-pdf-text-id]"),
+    ).flatMap((element) => {
+      try {
+        return range.intersectsNode(element) && element.dataset.pdfTextId
+          ? [element.dataset.pdfTextId]
+          : [];
+      } catch {
+        return [];
+      }
+    });
   }
 
   function handleTextSelection(sourcePageIndex: number) {
     if (!highlightMode) return;
-    const selected = window.getSelection()?.toString() ?? "";
-    if (cleanText(selected).length >= 3) {
+    const selection = window.getSelection();
+    const selected = cleanText(selection?.toString() ?? "");
+    if (selection && selected.length >= 3) {
       selectionHandledRef.current = true;
-      addHighlight(selected, sourcePageIndex);
+      addHighlight(
+        selected,
+        sourcePageIndex,
+        getSelectedPdfTextItemIds(selection, sourcePageIndex),
+      );
       window.setTimeout(() => {
         selectionHandledRef.current = false;
       }, 0);
     }
-    window.getSelection()?.removeAllRanges();
+    selection?.removeAllRanges();
   }
 
   function handleViewerScroll() {
@@ -787,27 +1029,15 @@ export default function Home() {
     setIsProcessing(true);
     setProcessingLabel(
       typeFromFile(file) === "PDF"
-        ? "Đang dựng nguyên bản từng trang PDF…"
+        ? "Đang mở nguyên bản toàn bộ file PDF…"
         : "Đang đọc cấu trúc tài liệu…",
     );
     setUploadMessage("");
 
-    let localSourceUrl: string | undefined;
     try {
       const materialId = `material-${Date.now()}`;
       const materialName = file.name.replace(/\.[^/.]+$/, "");
-      let pages: SlidePage[];
-      if (typeFromFile(file) === "PDF") {
-        localSourceUrl = URL.createObjectURL(file);
-        const pdf = await loadBundledPdf(localSourceUrl);
-        pages = bundledPdfPages(
-          materialId,
-          materialName,
-          Math.min(pdf.numPages, 60),
-        );
-      } else {
-        pages = await parseMaterial(file);
-      }
+      const pages = await parseMaterial(file);
       if (pages.length === 0) throw new Error("empty");
       setProcessingLabel("Đang lưu và tạo ngữ cảnh học tập…");
       const stored = await storeFile(file);
@@ -818,13 +1048,12 @@ export default function Home() {
         pages,
         status: stored ? "Đã lưu" : "Cục bộ",
         updated: "Vừa thêm",
-        sourceUrl: localSourceUrl,
       };
       setMaterials((current) => [material, ...current]);
       setActiveMaterialId(material.id);
       setPageIndex(0);
       setContextScope("current-page");
-      setHighlights([]);
+      setHighlightEntries([]);
       setGeneratedQuiz([]);
       setGeneratedFlashcards([]);
       setMessages([
@@ -842,11 +1071,6 @@ export default function Home() {
       );
       setToast("Tài liệu đã sẵn sàng");
     } catch {
-      if (localSourceUrl) {
-        pdfDocumentCache.delete(localSourceUrl);
-        pdfPageTextCache.delete(localSourceUrl);
-        URL.revokeObjectURL(localSourceUrl);
-      }
       setUploadMessage(
         "Không đọc được cấu trúc tệp này. Hãy thử xuất lại tài liệu hoặc dùng bản PDF.",
       );
@@ -893,7 +1117,7 @@ export default function Home() {
     setContextScope("current-page");
     setPasteValue("");
     setShowPaste(false);
-    setHighlights([]);
+    setHighlightEntries([]);
     setGeneratedQuiz([]);
     setGeneratedFlashcards([]);
     setMessages([
@@ -984,6 +1208,12 @@ export default function Home() {
       });
       const result = (await response.json()) as {
         answer?: string;
+        evidence?: Array<{ claim: string; citation: string }>;
+        confidence?:
+          | "Được nêu trực tiếp"
+          | "Được suy ra"
+          | "Không đủ thông tin";
+        note?: string;
         citations?: string[];
         live?: boolean;
       };
@@ -994,12 +1224,15 @@ export default function Home() {
           id: Date.now() + 1,
           role: "assistant",
           text: result.answer,
+          evidence: result.evidence,
+          confidence: result.confidence,
+          note: result.note,
           citation:
             result.citations && result.citations.length > 0
               ? `${activeMaterial.name} • ${result.citations
                   .map((id) => `[${id}]`)
                   .join(" ")}`
-              : `${activeMaterial.name} • ${sourceScopeLabel}`,
+              : undefined,
           live: result.live,
         },
       ]);
@@ -1009,8 +1242,9 @@ export default function Home() {
         {
           id: Date.now() + 1,
           role: "assistant",
-          text: `Dựa trên phần đang chọn, ý chính là: ${context.slice(0, 330)}${context.length > 330 ? "…" : ""}`,
-          citation: `${activeMaterial.name} • ${sourceScopeLabel}`,
+          text: "Không tìm thấy đủ thông tin trong tài liệu để kết luận.",
+          confidence: "Không đủ thông tin",
+          note: "Không thể kết nối trợ lý để kiểm tra nội dung nguồn.",
         },
       ]);
     } finally {
@@ -1127,9 +1361,17 @@ export default function Home() {
     if (!highlightMode) return;
     if (selectionHandledRef.current) return;
     const target = event.target as HTMLElement;
-    const text = target.closest<HTMLElement>("[data-highlightable]")?.innerText;
+    const highlightTarget =
+      target.closest<HTMLElement>("[data-highlightable]");
+    const text = highlightTarget?.textContent;
     if (text && !window.getSelection()?.toString()) {
-      addHighlight(text, sourcePageIndex);
+      addHighlight(
+        text,
+        sourcePageIndex,
+        highlightTarget?.dataset.pdfTextId
+          ? [highlightTarget.dataset.pdfTextId]
+          : [],
+      );
     }
   }
 
@@ -1371,10 +1613,11 @@ export default function Home() {
                   className={`document-page format-${pageKind} accent-${viewerPage.accent} ${
                     viewerIndex === pageIndex ? "is-current-page" : ""
                   } ${
-                    viewerPage.previewDataUrl || viewerPage.pdfPageNumber
+                    (activeMaterial.sourceUrl && viewerPage.pdfPageNumber) ||
+                    (viewerPage.pdfSource && viewerPage.pdfPageNumber)
                       ? "has-native-preview"
                       : ""
-                  }`}
+                  } ${highlightMode ? "highlight-mode" : "read-mode"}`}
                   style={{ aspectRatio: String(pageRatio) }}
                   key={viewerPage.id}
                   onMouseUp={() => handleTextSelection(viewerIndex)}
@@ -1390,12 +1633,15 @@ export default function Home() {
                       highlights={highlights}
                       onPageReady={updateBundledPage}
                     />
-                  ) : viewerPage.previewDataUrl ? (
+                  ) : viewerPage.pdfSource && viewerPage.pdfPageNumber ? (
                     <div className="pdf-native-page">
-                      <img
-                        src={viewerPage.previewDataUrl}
-                        alt={`${activeMaterial.name} — trang ${viewerIndex + 1}`}
-                        draggable={false}
+                      <PdfCanvasPage
+                        source={viewerPage.pdfSource}
+                        pageNumber={viewerPage.pdfPageNumber}
+                        zoom={zoom}
+                        label={`${activeMaterial.name} — trang ${
+                          viewerIndex + 1
+                        }`}
                       />
                       <div
                         className="pdf-text-layer"
@@ -1404,25 +1650,31 @@ export default function Home() {
                         }`}
                       >
                         {viewerPage.textLayer?.map((textItem, textIndex) => (
-                          <span
-                            key={`${viewerPage.id}-pdf-text-${textIndex}`}
-                            data-highlightable
-                            className={
-                              highlights.includes(cleanText(textItem.text))
-                                ? "is-highlighted"
-                                : ""
-                            }
-                            style={{
-                              left: `${textItem.left}%`,
-                              top: `${textItem.top}%`,
-                              width: `${textItem.width}%`,
-                              height: `${textItem.height}%`,
-                              fontSize: `${textItem.fontSize}%`,
-                              transform: `rotate(${textItem.rotation}deg)`,
-                            }}
-                          >
-                            {textItem.text}
-                          </span>
+                          (() => {
+                            const pdfTextItemId = `${viewerPage.id}:${textIndex}`;
+                            return (
+                              <span
+                                key={`${viewerPage.id}-pdf-text-${textIndex}`}
+                                data-highlightable
+                                data-pdf-text-id={pdfTextItemId}
+                                className={
+                                  highlightedPdfTextItems.has(pdfTextItemId)
+                                    ? "is-highlighted"
+                                    : ""
+                                }
+                                style={{
+                                  left: `${textItem.left}%`,
+                                  top: `${textItem.top}%`,
+                                  width: `${textItem.width}%`,
+                                  height: `${textItem.height}%`,
+                                  fontSize: `${textItem.fontSize}%`,
+                                  transform: `rotate(${textItem.rotation}deg)`,
+                                }}
+                              >
+                                {textItem.text}
+                              </span>
+                            );
+                          })()
                         ))}
                       </div>
                       <div className="native-page-label">
@@ -1612,7 +1864,9 @@ export default function Home() {
                   <Highlighter size={14} /> Ngữ cảnh đã chọn
                 </span>
                 {highlights.length > 0 && (
-                  <button onClick={() => setHighlights([])}>Xoá tất cả</button>
+                  <button onClick={() => setHighlightEntries([])}>
+                    Xoá tất cả
+                  </button>
                 )}
               </div>
               {highlights.length === 0 ? (
@@ -1624,13 +1878,13 @@ export default function Home() {
                 </p>
               ) : (
                 <div className="highlight-list">
-                  {highlights.map((highlight, index) => (
-                    <div key={`${highlight}-${index}`}>
-                      <span>“{highlight}”</span>
+                  {highlightEntries.map((highlight) => (
+                    <div key={highlight.id}>
+                      <span>“{highlight.text}”</span>
                       <button
                         onClick={() =>
-                          setHighlights((current) =>
-                            current.filter((item) => item !== highlight),
+                          setHighlightEntries((current) =>
+                            current.filter((item) => item.id !== highlight.id),
                           )
                         }
                         aria-label="Bỏ đoạn bôi sáng"
@@ -1656,6 +1910,28 @@ export default function Home() {
                   )}
                   <div className="message-bubble">
                     <p>{message.text}</p>
+                    {message.evidence && message.evidence.length > 0 && (
+                      <div className="answer-evidence">
+                        <strong>Căn cứ</strong>
+                        {message.evidence.map((item, evidenceIndex) => (
+                          <p key={`${message.id}-evidence-${evidenceIndex}`}>
+                            {item.claim} — [{item.citation}]
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                    {message.confidence && (
+                      <p className="answer-level">
+                        <strong>Mức độ</strong>
+                        {message.confidence}
+                      </p>
+                    )}
+                    {message.note && (
+                      <p className="answer-note">
+                        <strong>Lưu ý</strong>
+                        {message.note}
+                      </p>
+                    )}
                     {message.citation && (
                       <button
                         className="citation"

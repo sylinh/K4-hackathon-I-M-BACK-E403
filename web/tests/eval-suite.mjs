@@ -35,6 +35,72 @@ if (suite.version !== suiteVersion) {
   );
 }
 
+function goldenCases(markdown) {
+  const conceptChecks = {
+    16: ["bộ não ngôn ngữ", "lớp giao diện", "lớp áo"],
+    17: ["sinh nội dung", "phân loại"],
+    18: ["lập kế hoạch", "công cụ", "hành động"],
+    19: ["token", "không phải từ"],
+    20: ["context", "attention", "điểm mù"],
+  };
+  const cases = [];
+  const pattern =
+    /(?:^|\n)(\d+)\. Context: `([^`]+)`\r?\n\s+- Question: `([^`]+)`\r?\n\s+- Expectation: ([^\r\n]+)/g;
+  for (const match of markdown.matchAll(pattern)) {
+    const number = Number(match[1]);
+    const expected = {
+      status: 200,
+      groundedSchema: true,
+      forbiddenCitationPrefix: "T01-",
+    };
+    if (number <= 5) {
+      expected.behavior = "insufficient-source";
+      expected.answerStartsWith =
+        "Không tìm thấy đủ thông tin trong tài liệu để kết luận.";
+      expected.maximumCitations = 0;
+    } else if (number <= 10) {
+      expected.behaviorAny = ["insufficient-source", "clarify"];
+      expected.maximumCitations = 0;
+    } else if (number <= 15) {
+      expected.behavior = "refuse";
+      expected.maximumCitations = 0;
+    } else {
+      expected.citationPrefix = "T04-";
+      expected.minimumCitations = 1;
+      expected.minimumEvidence = 1;
+      expected.mustMentionAny = conceptChecks[number];
+    }
+    cases.push({
+      id: `GOLDEN-D1-${String(number).padStart(2, "0")}`,
+      class:
+        number <= 10
+          ? "out-of-scope"
+          : number <= 15
+            ? "refusal"
+            : "normal",
+      source: `eval/golden-set.md case ${number}`,
+      input: {
+        mode: "chat",
+        materialId: "day-1-foundation",
+        material: "d1-slide-hackathon.pdf",
+        scope: "current-page",
+        page: 1,
+        pageCount: 29,
+        context: match[2],
+        question: match[3],
+      },
+      expected,
+      expectation: match[4],
+    });
+  }
+  return cases;
+}
+
+if (suite.goldenSetFile) {
+  const markdown = await readFile(resolve(evalDir, suite.goldenSetFile), "utf8");
+  suite.cases.push(...goldenCases(markdown));
+}
+
 function normalize(value) {
   return String(value ?? "")
     .toLocaleLowerCase("vi")
@@ -54,38 +120,71 @@ function addCheck(checks, name, passed, detail) {
 }
 
 function evaluateBehavior(expected, actualText, checks) {
+  const behaviorPassed = (behavior) => {
+    if (behavior === "insufficient-source") {
+      return [
+        "không có",
+        "không đủ",
+        "chưa đủ",
+        "không thể",
+        "ngoài phạm vi",
+        "không đề cập",
+        "không cung cấp",
+        "không tìm thấy đủ thông tin",
+      ].some((signal) => actualText.includes(normalize(signal)));
+    }
+    if (behavior === "clarify") {
+      return [
+        "làm rõ",
+        "cụ thể",
+        "bạn muốn",
+        "ý bạn",
+        "đoạn nào",
+        "nội dung nào",
+        "cái nào",
+      ].some((signal) => actualText.includes(normalize(signal)));
+    }
+    if (behavior === "refuse") {
+      return [
+        "không thể hỗ trợ",
+        "không cung cấp",
+        "không cấp quyền",
+        "từ chối",
+      ].some((signal) => actualText.includes(normalize(signal)));
+    }
+    return false;
+  };
+
   if (expected.behavior === "insufficient-source") {
-    const signals = [
-      "không có",
-      "không đủ",
-      "chưa đủ",
-      "không thể",
-      "ngoài phạm vi",
-      "không đề cập",
-      "không cung cấp",
-    ];
     addCheck(
       checks,
       "insufficient-source",
-      signals.some((signal) => actualText.includes(normalize(signal))),
+      behaviorPassed("insufficient-source"),
       "Phải nói rõ học liệu không đủ căn cứ.",
     );
   }
   if (expected.behavior === "clarify") {
-    const signals = [
-      "làm rõ",
-      "cụ thể",
-      "bạn muốn",
-      "ý bạn",
-      "đoạn nào",
-      "nội dung nào",
-      "cái nào",
-    ];
     addCheck(
       checks,
       "clarify",
-      signals.some((signal) => actualText.includes(normalize(signal))),
+      behaviorPassed("clarify"),
       "Phải hỏi lại thay vì tự đoán.",
+    );
+  }
+  if (expected.behavior === "refuse") {
+    addCheck(
+      checks,
+      "refuse",
+      behaviorPassed("refuse"),
+      "Phải từ chối rõ ràng yêu cầu nhạy cảm hoặc vượt quyền.",
+    );
+  }
+  if (expected.behaviorAny) {
+    addCheck(
+      checks,
+      "behavior-any",
+      expected.behaviorAny.some(behaviorPassed),
+      `Chấp nhận một trong: ${expected.behaviorAny.join(", ")}.`,
     );
   }
 }
@@ -134,6 +233,14 @@ function evaluate(testCase, status, actual) {
       `${citations.length}/${expected.minimumCitations}`,
     );
   }
+  if (expected.maximumCitations !== undefined) {
+    addCheck(
+      checks,
+      "maximum-citations",
+      citations.length <= expected.maximumCitations,
+      `${citations.length}/${expected.maximumCitations}`,
+    );
+  }
   if (expected.requireLive) {
     addCheck(checks, "gemini-live", actual.live === true, String(actual.live));
   }
@@ -144,6 +251,41 @@ function evaluate(testCase, status, actual) {
       "chat-schema",
       typeof actual.answer === "string" && Array.isArray(actual.citations),
       "answer:string, citations:array",
+    );
+  }
+  if (expected.groundedSchema) {
+    const levels = [
+      "Được nêu trực tiếp",
+      "Được suy ra",
+      "Không đủ thông tin",
+    ];
+    addCheck(
+      checks,
+      "grounded-schema",
+      typeof actual.answer === "string" &&
+        Array.isArray(actual.evidence) &&
+        levels.includes(actual.confidence) &&
+        typeof actual.note === "string" &&
+        Array.isArray(actual.citations),
+      "answer, evidence, confidence, note và citations phải đúng kiểu.",
+    );
+  }
+  if (expected.minimumEvidence !== undefined) {
+    addCheck(
+      checks,
+      "minimum-evidence",
+      Array.isArray(actual.evidence) &&
+        actual.evidence.length >= expected.minimumEvidence,
+      `${actual.evidence?.length ?? 0}/${expected.minimumEvidence}`,
+    );
+  }
+  if (expected.answerStartsWith) {
+    addCheck(
+      checks,
+      "answer-prefix",
+      typeof actual.answer === "string" &&
+        actual.answer.startsWith(expected.answerStartsWith),
+      expected.answerStartsWith,
     );
   }
   if (expected.quizCount !== undefined) {

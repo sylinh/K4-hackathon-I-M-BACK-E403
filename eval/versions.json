@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "currentVersion": "v2-source-scope",
+  "currentVersion": "v3-grounding-quality",
   "stages": [
     {
       "stage": 1,
@@ -23,8 +23,10 @@
     {
       "stage": 3,
       "version": "v3-grounding-quality",
-      "status": "planned",
-      "objective": "Nâng độ đúng nội dung, citation và retrieval cho từng ngày học.",
+      "status": "implemented-awaiting-live-quota",
+      "objective": "Bắt buộc trả lời có cấu trúc, chống bịa, xử lý thiếu dữ kiện và từ chối theo golden set Day 1.",
+      "suite": "suites/v3-grounding-quality.json",
+      "report": "results/v3-grounding-quality/2026-07-30T15-48-12-952Z.json",
       "exitCriteria": "Tổng pass rate đạt ít nhất 80% với response Gemini thật."
     },
     {
