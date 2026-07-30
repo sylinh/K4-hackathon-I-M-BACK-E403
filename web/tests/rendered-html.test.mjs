@@ -20,7 +20,9 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /activeMaterial\.pages\.map/);
   assert.match(page, /Cuộn liên tục/);
   assert.match(page, /data-page-index/);
-  assert.match(page, /URL\.createObjectURL\(file\)/);
+  assert.match(page, /new Uint8Array\(await file\.arrayBuffer\(\)\)/);
+  assert.match(page, /source\.data\.slice\(\)/);
+  assert.doesNotMatch(page, /URL\.createObjectURL\(file\)/);
   assert.match(page, /<PdfCanvasPage/);
   assert.match(page, /window\.devicePixelRatio/);
   assert.match(page, /const pageCount = pdf\.numPages/);
@@ -29,7 +31,7 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.doesNotMatch(page, /canvas\.toDataURL/);
   assert.doesNotMatch(page, /Math\.min\(pdf\.numPages,\s*60\)/);
   assert.match(page, /pdf-text-layer/);
-  assert.match(page, /pdfSourceUrl/);
+  assert.match(page, /pdfSource/);
   assert.doesNotMatch(page, /className="viewer-footer"/);
   assert.match(page, /Tạo quiz/);
   assert.match(page, /Tạo flashcard/);

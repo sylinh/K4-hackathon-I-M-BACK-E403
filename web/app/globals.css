@@ -735,12 +735,30 @@ input:focus-visible {
   inset: 0;
   display: grid;
   place-items: center;
+  align-content: center;
+  gap: 10px;
   margin: 0;
   padding: 24px;
   background: #ffffff;
   color: #8b2f24;
   font-size: 12px;
   text-align: center;
+}
+
+.pdf-render-error p {
+  margin: 0;
+}
+
+.pdf-render-error button {
+  min-height: 34px;
+  padding: 0 13px;
+  border: 1px solid #d89990;
+  border-radius: 9px;
+  background: #fff7f5;
+  color: #8b2f24;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .pdf-text-layer {

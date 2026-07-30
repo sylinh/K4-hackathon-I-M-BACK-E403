@@ -53,7 +53,10 @@ type SlidePage = {
   accent: "blue" | "coral" | "mint" | "amber";
   kind?: "slide" | "document";
   aspectRatio?: number;
-  pdfSourceUrl?: string;
+  pdfSource?: {
+    id: string;
+    data: Uint8Array;
+  };
   pdfPageNumber?: number;
   textLayer?: Array<{
     text: string;
@@ -100,24 +103,29 @@ type PdfDocumentPromise = ReturnType<
 
 const pdfDocumentCache = new Map<string, PdfDocumentPromise>();
 
-async function getPdfDocument(sourceUrl: string) {
-  const cachedDocument = pdfDocumentCache.get(sourceUrl);
+async function getPdfDocument(source: NonNullable<SlidePage["pdfSource"]>) {
+  const cachedDocument = pdfDocumentCache.get(source.id);
   if (cachedDocument) return cachedDocument;
 
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
-  const documentPromise = pdfjs.getDocument(sourceUrl).promise;
-  pdfDocumentCache.set(sourceUrl, documentPromise);
+  const documentPromise = pdfjs
+    .getDocument({ data: source.data.slice() })
+    .promise.catch((error) => {
+      pdfDocumentCache.delete(source.id);
+      throw error;
+    });
+  pdfDocumentCache.set(source.id, documentPromise);
   return documentPromise;
 }
 
 function PdfCanvasPage({
-  sourceUrl,
+  source,
   pageNumber,
   zoom,
   label,
 }: {
-  sourceUrl: string;
+  source: NonNullable<SlidePage["pdfSource"]>;
   pageNumber: number;
   zoom: number;
   label: string;
@@ -125,6 +133,7 @@ function PdfCanvasPage({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [renderFailed, setRenderFailed] = useState(false);
+  const [renderAttempt, setRenderAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,7 +147,7 @@ function PdfCanvasPage({
       if (!canvas || !container || cancelled) return;
 
       try {
-        const pdf = await getPdfDocument(sourceUrl);
+        const pdf = await getPdfDocument(source);
         const pdfPage = await pdf.getPage(pageNumber);
         if (cancelled) return;
 
@@ -198,15 +207,25 @@ function PdfCanvasPage({
       observer?.disconnect();
       renderTask?.cancel();
     };
-  }, [label, pageNumber, sourceUrl, zoom]);
+  }, [label, pageNumber, renderAttempt, source, zoom]);
 
   return (
     <div className="pdf-canvas-surface" ref={containerRef}>
       <canvas ref={canvasRef} role="img" />
       {renderFailed && (
-        <p className="pdf-render-error">
-          Không thể hiển thị nguyên bản trang PDF này.
-        </p>
+        <div className="pdf-render-error">
+          <p>Trang PDF chưa hiển thị được.</p>
+          <button
+            type="button"
+            onClick={() => {
+              pdfDocumentCache.delete(source.id);
+              setRenderFailed(false);
+              setRenderAttempt((value) => value + 1);
+            }}
+          >
+            Thử hiển thị lại
+          </button>
+        </div>
       )}
     </div>
   );
@@ -471,9 +490,12 @@ async function extractOfficePages(file: File): Promise<SlidePage[]> {
 async function extractPdfPages(file: File): Promise<SlidePage[]> {
   const pdfjs = await import("pdfjs-dist");
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
-  const sourceUrl = URL.createObjectURL(file);
-  const data = new Uint8Array(await file.arrayBuffer());
-  const loadingTask = pdfjs.getDocument({ data });
+  const originalData = new Uint8Array(await file.arrayBuffer());
+  const source: NonNullable<SlidePage["pdfSource"]> = {
+    id: crypto.randomUUID(),
+    data: originalData,
+  };
+  const loadingTask = pdfjs.getDocument({ data: originalData.slice() });
   try {
     const pdf = await loadingTask.promise;
     const pageCount = pdf.numPages;
@@ -495,7 +517,7 @@ async function extractPdfPages(file: File): Promise<SlidePage[]> {
         ratio > 1.15 ? "slide" : "document",
         ratio,
       );
-      extractedPage.pdfSourceUrl = sourceUrl;
+      extractedPage.pdfSource = source;
       extractedPage.pdfPageNumber = pageNumber;
       extractedPage.textLayer = content.items.flatMap((item) => {
         if (!("str" in item) || !cleanText(item.str)) return [];
@@ -521,7 +543,6 @@ async function extractPdfPages(file: File): Promise<SlidePage[]> {
     return pages;
   } catch (error) {
     await loadingTask.destroy().catch(() => undefined);
-    URL.revokeObjectURL(sourceUrl);
     throw error;
   }
 }
@@ -1212,7 +1233,7 @@ export default function Home() {
                   className={`document-page format-${pageKind} accent-${viewerPage.accent} ${
                     viewerIndex === pageIndex ? "is-current-page" : ""
                   } ${
-                    viewerPage.pdfSourceUrl && viewerPage.pdfPageNumber
+                    viewerPage.pdfSource && viewerPage.pdfPageNumber
                       ? "has-native-preview"
                       : ""
                   }`}
@@ -1221,10 +1242,10 @@ export default function Home() {
                   onMouseUp={() => handleTextSelection(viewerIndex)}
                   onClick={(event) => handlePageClick(event, viewerIndex)}
                 >
-                  {viewerPage.pdfSourceUrl && viewerPage.pdfPageNumber ? (
+                  {viewerPage.pdfSource && viewerPage.pdfPageNumber ? (
                     <div className="pdf-native-page">
                       <PdfCanvasPage
-                        sourceUrl={viewerPage.pdfSourceUrl}
+                        source={viewerPage.pdfSource}
                         pageNumber={viewerPage.pdfPageNumber}
                         zoom={zoom}
                         label={`${activeMaterial.name} — trang ${
