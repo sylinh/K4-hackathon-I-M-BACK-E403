@@ -124,6 +124,17 @@ type Flashcard = {
   citation?: string;
 };
 
+type SavedLearningSet = {
+  id: string;
+  kind: "quiz" | "flashcards";
+  materialId: string;
+  materialName: string;
+  pageIndex: number;
+  savedAt: number;
+  quiz?: QuizQuestion[];
+  flashcards?: Flashcard[];
+};
+
 type AgentTab = "chat" | "quiz" | "flashcards";
 type ContextScope = "current-page" | "all-document";
 type InterfaceLanguage = "vi" | "en";
@@ -1195,6 +1206,7 @@ export default function Home() {
   const [flippedCards, setFlippedCards] = useState<number[]>([]);
   const [generatedQuiz, setGeneratedQuiz] = useState<QuizQuestion[]>([]);
   const [generatedFlashcards, setGeneratedFlashcards] = useState<Flashcard[]>([]);
+  const [savedLearningSets, setSavedLearningSets] = useState<SavedLearningSet[]>([]);
   const [isGeneratingLearning, setIsGeneratingLearning] = useState(false);
   const [learningLive, setLearningLive] = useState(false);
   const [toast, setToast] = useState("");
@@ -1273,6 +1285,23 @@ export default function Home() {
         if (storedAnnotations) {
           setAnnotations(JSON.parse(storedAnnotations) as PageAnnotation[]);
         }
+        const storedLearningSets = window.localStorage.getItem(
+          "vlearn-personal-notebook",
+        );
+        if (storedLearningSets) {
+          const parsed = JSON.parse(storedLearningSets);
+          if (Array.isArray(parsed)) {
+            setSavedLearningSets(
+              parsed.filter(
+                (entry): entry is SavedLearningSet =>
+                  entry &&
+                  (entry.kind === "quiz" || entry.kind === "flashcards") &&
+                  typeof entry.materialId === "string" &&
+                  typeof entry.materialName === "string",
+              ),
+            );
+          }
+        }
       } catch {
         // Device preferences remain optional.
       } finally {
@@ -1318,6 +1347,10 @@ export default function Home() {
         "vlearn-annotations",
         JSON.stringify(annotations),
       );
+      window.localStorage.setItem(
+        "vlearn-personal-notebook",
+        JSON.stringify(savedLearningSets),
+      );
     } catch {
       // The viewer still works when browser storage is unavailable.
     }
@@ -1327,6 +1360,7 @@ export default function Home() {
     isDark,
     language,
     preferencesReady,
+    savedLearningSets,
   ]);
 
   useEffect(() => {
@@ -1957,6 +1991,46 @@ export default function Home() {
     setQuizComplete(false);
   }
 
+  function saveLearningSet(kind: "quiz" | "flashcards") {
+    const hasContent = kind === "quiz" ? quiz.length > 0 : flashcards.length > 0;
+    if (!hasContent) return;
+    const savedSet: SavedLearningSet = {
+      id: `learning-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      kind,
+      materialId: activeMaterial.id,
+      materialName: activeMaterial.name,
+      pageIndex,
+      savedAt: Date.now(),
+      ...(kind === "quiz" ? { quiz } : { flashcards }),
+    };
+    setSavedLearningSets((current) => [savedSet, ...current].slice(0, 12));
+    setToast(
+      language === "vi"
+        ? `Đã lưu ${kind === "quiz" ? "quiz" : "flashcard"} vào Sổ tay cá nhân`
+        : `${kind === "quiz" ? "Quiz" : "Flashcards"} saved to Personal notebook`,
+    );
+  }
+
+  function openSavedLearningSet(savedSet: SavedLearningSet) {
+    const material = materials.find((item) => item.id === savedSet.materialId);
+    if (material) {
+      setActiveMaterialId(material.id);
+      setPageIndex(Math.max(0, Math.min(material.pages.length - 1, savedSet.pageIndex)));
+    }
+    setRightOpen(true);
+    setLearningLive(false);
+    if (savedSet.kind === "quiz" && savedSet.quiz?.length) {
+      resetQuiz();
+      setGeneratedQuiz(savedSet.quiz);
+      setAgentTab("quiz");
+    }
+    if (savedSet.kind === "flashcards" && savedSet.flashcards?.length) {
+      setFlippedCards([]);
+      setGeneratedFlashcards(savedSet.flashcards);
+      setAgentTab("flashcards");
+    }
+  }
+
   function chooseQuizAnswer(answer: number) {
     if (quizChecked) return;
     const next = [...quizAnswers];
@@ -2233,6 +2307,34 @@ export default function Home() {
             );
           })}
         </div>
+
+        <section className="personal-notebook" aria-label="Sổ tay cá nhân">
+          <div className="personal-notebook-heading">
+            <span>
+              <BookOpen size={14} /> Sổ tay cá nhân
+            </span>
+            {savedLearningSets.length > 0 && <small>{savedLearningSets.length}</small>}
+          </div>
+          {savedLearningSets.length === 0 ? (
+            <p>Lưu Quiz hoặc Flashcard để ôn lại sau.</p>
+          ) : (
+            <div className="personal-notebook-list">
+              {savedLearningSets.slice(0, 3).map((savedSet) => (
+                <button
+                  key={savedSet.id}
+                  type="button"
+                  onClick={() => openSavedLearningSet(savedSet)}
+                >
+                  <span>{savedSet.kind === "quiz" ? "Quiz" : "Flashcard"}</span>
+                  <strong>{savedSet.materialName}</strong>
+                  <small>
+                    Trang {savedSet.pageIndex + 1} · {savedSet.kind === "quiz" ? savedSet.quiz?.length : savedSet.flashcards?.length} mục
+                  </small>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
 
         <div className="library-tip">
           <Sparkles size={17} />
@@ -3035,6 +3137,13 @@ export default function Home() {
                     : "Kiểm tra đáp án"}
                   <ArrowRight size={16} />
                 </button>
+                <button
+                  className="learning-save-button"
+                  type="button"
+                  onClick={() => saveLearningSet("quiz")}
+                >
+                  <BookOpen size={15} /> Lưu quiz vào Sổ tay
+                </button>
               </>
             ) : (
               <div className="quiz-result">
@@ -3069,6 +3178,13 @@ export default function Home() {
                 </button>
                 <button className="secondary-action" onClick={createFlashcards}>
                   Ôn bằng flashcard
+                </button>
+                <button
+                  className="learning-save-button"
+                  type="button"
+                  onClick={() => saveLearningSet("quiz")}
+                >
+                  <BookOpen size={15} /> Lưu quiz vào Sổ tay
                 </button>
               </div>
             )}
@@ -3116,7 +3232,7 @@ export default function Home() {
                         className={`flashcard ${flipped ? "flipped" : ""}`}
                         onClick={() => toggleCard(index)}
                       >
-                        <span>{flipped ? "ĐÁP ÁN" : `THẺ ${index + 1}`}</span>
+                        <span>{flipped ? "Đáp án" : `Thẻ ${index + 1}`}</span>
                         <p>{flipped ? card.back : card.front}</p>
                         <small>
                           {flipped && card.citation
@@ -3134,6 +3250,13 @@ export default function Home() {
                   }
                 >
                   <CheckCircle2 size={16} /> Lật tất cả thẻ
+                </button>
+                <button
+                  className="learning-save-button"
+                  type="button"
+                  onClick={() => saveLearningSet("flashcards")}
+                >
+                  <BookOpen size={15} /> Lưu flashcard vào Sổ tay
                 </button>
               </>
             )}

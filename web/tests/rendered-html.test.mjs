@@ -60,6 +60,9 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /Tạo quiz/);
   assert.match(page, /Tạo flashcard/);
   assert.match(page, /Xem kết quả/);
+  assert.match(page, /vlearn-personal-notebook/);
+  assert.match(page, /saveLearningSet/);
+  assert.match(page, /openSavedLearningSet/);
   assert.match(page, /day-1-foundation/);
   assert.match(page, /day-2-product/);
   assert.match(page, /d1-slide-hackathon\.pdf/);
@@ -88,6 +91,9 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(styles, /\.quiz-card h4[\s\S]*font-family: Arial, Helvetica, sans-serif/);
   assert.match(styles, /\.flashcard p[\s\S]*font-family: Arial, Helvetica, sans-serif/);
   assert.doesNotMatch(styles, /\.flashcard p[\s\S]*Georgia/);
+  assert.match(styles, /\.flashcard > span[\s\S]*letter-spacing: 0/);
+  assert.match(styles, /\.personal-notebook/);
+  assert.match(styles, /\.learning-save-button/);
   assert.match(styles, /\.annotation-layer/);
   assert.match(styles, /\.page-note/);
   assert.match(styles, /\.page-image/);

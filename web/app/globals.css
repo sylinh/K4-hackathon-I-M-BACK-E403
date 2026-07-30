@@ -524,6 +524,93 @@ input:focus-visible {
   font-size: 10px;
 }
 
+.personal-notebook {
+  margin-top: 14px;
+  padding: 11px;
+  border: 1px solid #d5e2f5;
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--blue-soft) 42%, var(--paper));
+}
+
+.personal-notebook-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.personal-notebook-heading > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.personal-notebook-heading small {
+  min-width: 20px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--paper);
+  color: var(--blue);
+  text-align: center;
+  font-size: 9px;
+}
+
+.personal-notebook > p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.personal-notebook-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.personal-notebook-list button {
+  width: 100%;
+  padding: 7px 8px;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.personal-notebook-list button:hover {
+  border-color: #89afe5;
+}
+
+.personal-notebook-list span,
+.personal-notebook-list strong,
+.personal-notebook-list small {
+  display: block;
+}
+
+.personal-notebook-list span {
+  color: var(--blue);
+  font-size: 8px;
+  font-weight: 700;
+}
+
+.personal-notebook-list strong {
+  margin: 2px 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personal-notebook-list small {
+  color: var(--muted);
+  font-size: 8px;
+}
+
 .workspace {
   grid-column: 2;
   grid-row: 2;
@@ -2376,9 +2463,11 @@ input:focus-visible {
 
 .flashcard > span {
   color: var(--blue);
-  font-size: 8px;
-  font-weight: 800;
-  letter-spacing: 0.12em;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .flashcard.flipped > span {
@@ -2391,11 +2480,38 @@ input:focus-visible {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 15px;
   line-height: 1.45;
+  letter-spacing: normal;
+  word-spacing: normal;
 }
 
 .flashcard small {
   color: var(--subtle);
+  font-family: Arial, Helvetica, sans-serif;
   font-size: 8px;
+}
+
+.learning-save-button {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid #bfd3ee;
+  border-radius: 11px;
+  background: var(--paper);
+  color: var(--blue-deep);
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.learning-save-button:hover {
+  border-color: var(--blue);
+  background: var(--blue-soft);
 }
 
 .floating-agent {
