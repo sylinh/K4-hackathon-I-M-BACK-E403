@@ -876,7 +876,7 @@ function PdfPagePreview({
   pageNumber,
   pageCount,
   materialName,
-  highlights,
+  highlightedPdfTextItems,
   onPageReady,
 }: {
   materialId: string;
@@ -884,7 +884,7 @@ function PdfPagePreview({
   pageNumber: number;
   pageCount: number;
   materialName: string;
-  highlights: string[];
+  highlightedPdfTextItems: Set<string>;
   onPageReady: (
     materialId: string,
     pageNumber: number,
@@ -964,27 +964,31 @@ function PdfPagePreview({
             className="pdf-text-layer"
             aria-label={`Lớp văn bản có thể bôi sáng của trang ${pageNumber}`}
           >
-            {renderedPage.textLayer?.map((textItem, textIndex) => (
-              <span
-                key={`${pageNumber}-pdf-text-${textIndex}`}
-                data-highlightable
-                className={
-                  highlights.includes(cleanText(textItem.text))
-                    ? "is-highlighted"
-                    : ""
-                }
-                style={{
-                  left: `${textItem.left}%`,
-                  top: `${textItem.top}%`,
-                  width: `${textItem.width}%`,
-                  height: `${textItem.height}%`,
-                  fontSize: `${textItem.fontSize}%`,
-                  transform: `rotate(${textItem.rotation}deg)`,
-                }}
-              >
-                {textItem.text}
-              </span>
-            ))}
+            {renderedPage.textLayer?.map((textItem, textIndex) => {
+              const pdfTextItemId = `${materialId}-page-${pageNumber}:${textIndex}`;
+              return (
+                <span
+                  key={`${pageNumber}-pdf-text-${textIndex}`}
+                  data-highlightable
+                  data-pdf-text-id={pdfTextItemId}
+                  className={
+                    highlightedPdfTextItems.has(pdfTextItemId)
+                      ? "is-highlighted"
+                      : ""
+                  }
+                  style={{
+                    left: `${textItem.left}%`,
+                    top: `${textItem.top}%`,
+                    width: `${textItem.width}%`,
+                    height: `${textItem.height}%`,
+                    fontSize: `${textItem.fontSize}%`,
+                    transform: `rotate(${textItem.rotation}deg)`,
+                  }}
+                >
+                  {textItem.text}
+                </span>
+              );
+            })}
           </div>
         </>
       ) : loadError ? (
@@ -1082,10 +1086,12 @@ export default function Home() {
   const [isGeneratingLearning, setIsGeneratingLearning] = useState(false);
   const [learningLive, setLearningLive] = useState(false);
   const [toast, setToast] = useState("");
+  const [showMoreTools, setShowMoreTools] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const annotationImageRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
+  const moreToolsRef = useRef<HTMLDivElement>(null);
   const selectionHandledRef = useRef(false);
 
   const updateBundledPage = useCallback(
@@ -1156,6 +1162,26 @@ export default function Home() {
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    if (!showMoreTools) return;
+    const closeMoreTools = (event: globalThis.MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent && event.key !== "Escape") return;
+      if (
+        event instanceof globalThis.MouseEvent &&
+        moreToolsRef.current?.contains(event.target as Node)
+      ) {
+        return;
+      }
+      setShowMoreTools(false);
+    };
+    document.addEventListener("pointerdown", closeMoreTools);
+    document.addEventListener("keydown", closeMoreTools);
+    return () => {
+      document.removeEventListener("pointerdown", closeMoreTools);
+      document.removeEventListener("keydown", closeMoreTools);
+    };
+  }, [showMoreTools]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -1787,14 +1813,44 @@ export default function Home() {
     const target = event.target as HTMLElement;
     const highlightTarget =
       target.closest<HTMLElement>("[data-highlightable]");
-    const text = highlightTarget?.textContent;
-    if (text && !window.getSelection()?.toString()) {
+    if (!highlightTarget || window.getSelection()?.toString()) return;
+
+    const pdfTextItemId = highlightTarget.dataset.pdfTextId;
+    if (pdfTextItemId) {
+      const textLayer = highlightTarget.closest(".pdf-text-layer");
+      const targetCenter =
+        highlightTarget.offsetTop + highlightTarget.offsetHeight / 2;
+      const lineItems = Array.from(
+        textLayer?.querySelectorAll<HTMLElement>("[data-pdf-text-id]") ?? [],
+      )
+        .filter((element) => {
+          const center = element.offsetTop + element.offsetHeight / 2;
+          const tolerance = Math.max(
+            2,
+            Math.min(element.offsetHeight, highlightTarget.offsetHeight) * 0.55,
+          );
+          return Math.abs(center - targetCenter) <= tolerance;
+        })
+        .sort((left, right) => left.offsetLeft - right.offsetLeft);
+      const lineText = cleanText(
+        lineItems.map((element) => element.textContent ?? "").join(" "),
+      );
+      addHighlight(
+        lineText,
+        sourcePageIndex,
+        lineItems.flatMap((element) =>
+          element.dataset.pdfTextId ? [element.dataset.pdfTextId] : [],
+        ),
+      );
+      return;
+    }
+
+    const text = highlightTarget.textContent;
+    if (text) {
       addHighlight(
         text,
         sourcePageIndex,
-        highlightTarget?.dataset.pdfTextId
-          ? [highlightTarget.dataset.pdfTextId]
-          : [],
+        [],
       );
     }
   }
@@ -2013,79 +2069,98 @@ export default function Home() {
               <Highlighter size={16} />
               <span>{language === "vi" ? "Highlight" : "Highlight"}</span>
             </button>
-            <button
-              className={`tool-button ${
-                viewerTool === "circle" ? "active" : ""
-              }`}
-              onClick={() => setViewerTool("circle")}
-              title={language === "vi" ? "Khoanh vùng" : "Circle an area"}
-            >
-              <Circle size={16} />
-              <span>{language === "vi" ? "Khoanh" : "Circle"}</span>
-            </button>
-            <button
-              className={`tool-button ${viewerTool === "note" ? "active" : ""}`}
-              onClick={() => setViewerTool("note")}
-              title={
-                language === "vi"
-                  ? "Bấm lên trang để thêm ghi chú"
-                  : "Click the page to add a note"
-              }
-            >
-              <StickyNote size={16} />
-              <span>Note</span>
-            </button>
-            <button
-              className="tool-button"
-              onClick={() => annotationImageRef.current?.click()}
-              title={
-                language === "vi"
-                  ? "Chèn ảnh vào trang hiện tại"
-                  : "Insert an image on the current page"
-              }
-            >
-              <ImagePlus size={16} />
-              <span>{language === "vi" ? "Ảnh" : "Image"}</span>
-            </button>
-            <button
-              className={`tool-button ${
-                viewerTool === "eraser" ? "active eraser" : ""
-              }`}
-              onClick={() => setViewerTool("eraser")}
-              title={
-                language === "vi"
-                  ? "Chọn nét vẽ, khoanh hoặc ảnh để xóa"
-                  : "Select an annotation to erase"
-              }
-            >
-              <Eraser size={16} />
-              <span>{language === "vi" ? "Tẩy" : "Erase"}</span>
-            </button>
-            {viewerTool === "eraser" && (
+            <div className="more-tools" ref={moreToolsRef}>
               <button
-                className="tool-button icon-only danger"
-                onClick={clearPageAnnotations}
+                type="button"
+                className={`tool-button icon-only ${
+                  ["circle", "note", "eraser"].includes(viewerTool)
+                    ? "active"
+                    : ""
+                }`}
                 aria-label={
-                  language === "vi"
-                    ? "Xóa mọi ghi chú trên trang"
-                    : "Clear page annotations"
+                  language === "vi" ? "Thêm công cụ" : "More tools"
                 }
-                title={
-                  language === "vi"
-                    ? "Xóa mọi ghi chú trên trang"
-                    : "Clear page annotations"
-                }
+                title={language === "vi" ? "Thêm công cụ" : "More tools"}
+                aria-haspopup="menu"
+                aria-expanded={showMoreTools}
+                onClick={() => setShowMoreTools((current) => !current)}
               >
-                <Trash2 size={16} />
+                <MoreHorizontal size={17} />
               </button>
-            )}
-            <button
-              className="tool-button icon-only"
-              aria-label={language === "vi" ? "Thêm tuỳ chọn" : "More options"}
-              title={language === "vi" ? "Thêm tuỳ chọn" : "More options"}
-            >
-              <MoreHorizontal size={17} />
-            </button>
+              {showMoreTools && (
+                <div
+                  className="more-tools-menu"
+                  role="menu"
+                  aria-label={
+                    language === "vi" ? "Công cụ bổ sung" : "Additional tools"
+                  }
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={viewerTool === "circle" ? "active" : ""}
+                    onClick={() => {
+                      setViewerTool("circle");
+                      setShowMoreTools(false);
+                    }}
+                  >
+                    <Circle size={16} />
+                    <span>{language === "vi" ? "Khoanh" : "Circle"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={viewerTool === "note" ? "active" : ""}
+                    onClick={() => {
+                      setViewerTool("note");
+                      setShowMoreTools(false);
+                    }}
+                  >
+                    <StickyNote size={16} />
+                    <span>{language === "vi" ? "Text" : "Text"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setShowMoreTools(false);
+                      annotationImageRef.current?.click();
+                    }}
+                  >
+                    <ImagePlus size={16} />
+                    <span>{language === "vi" ? "Ảnh" : "Image"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className={viewerTool === "eraser" ? "active eraser" : ""}
+                    onClick={() => {
+                      setViewerTool("eraser");
+                      setShowMoreTools(false);
+                    }}
+                  >
+                    <Eraser size={16} />
+                    <span>{language === "vi" ? "Tẩy" : "Erase"}</span>
+                  </button>
+                  {viewerTool === "eraser" && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      className="danger"
+                      onClick={() => {
+                        clearPageAnnotations();
+                        setShowMoreTools(false);
+                      }}
+                    >
+                      <Trash2 size={16} />
+                      <span>
+                        {language === "vi" ? "Xóa cả trang" : "Clear page"}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
           <div className="page-pill">
             <Layers3 size={13} />
@@ -2170,7 +2245,7 @@ export default function Home() {
                       pageNumber={viewerPage.pdfPageNumber}
                       pageCount={activeMaterial.pages.length}
                       materialName={activeMaterial.name}
-                      highlights={highlights}
+                      highlightedPdfTextItems={highlightedPdfTextItems}
                       onPageReady={updateBundledPage}
                     />
                   ) : viewerPage.pdfSource && viewerPage.pdfPageNumber ? (

@@ -20,6 +20,9 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /range\.intersectsNode\(element\)/);
   assert.match(page, /data-pdf-text-id/);
   assert.match(page, /highlightedPdfTextItems/);
+  assert.match(page, /aria-haspopup="menu"/);
+  assert.match(page, /more-tools-menu/);
+  assert.match(page, /lineItems\.map/);
   assert.match(page, /handleViewerScroll/);
   assert.match(page, /activeMaterial\.pages\.map/);
   assert.match(page, /annotation\.pageIndex === pageIndex/);

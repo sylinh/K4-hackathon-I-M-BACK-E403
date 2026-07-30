@@ -646,6 +646,58 @@ input:focus-visible {
   padding: 0;
 }
 
+.more-tools {
+  position: relative;
+}
+
+.more-tools-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30;
+  display: grid;
+  min-width: 174px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  box-shadow: var(--shadow-md);
+}
+
+.more-tools-menu button {
+  width: 100%;
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.more-tools-menu button:hover,
+.more-tools-menu button.active {
+  background: var(--blue-soft);
+  color: var(--blue-deep);
+}
+
+.more-tools-menu button.eraser.active,
+.more-tools-menu button.danger {
+  color: #a43d2f;
+}
+
+.more-tools-menu button.danger {
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+}
+
 .page-pill {
   position: absolute;
   left: 50%;
@@ -1054,8 +1106,10 @@ input:focus-visible {
 
 .pdf-text-layer span.is-highlighted {
   border-radius: 2px;
-  background: rgba(255, 216, 58, 0.48) !important;
-  box-shadow: inset 0 -1px 0 rgba(170, 122, 0, 0.32);
+  background: rgba(255, 211, 35, 0.68) !important;
+  box-shadow:
+    inset 0 -1px 0 rgba(142, 96, 0, 0.42),
+    0 0 0 1px rgba(223, 169, 0, 0.14);
   mix-blend-mode: multiply;
 }
 
