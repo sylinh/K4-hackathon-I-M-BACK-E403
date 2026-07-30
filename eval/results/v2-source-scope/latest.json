@@ -3,7 +3,7 @@
   "stage": "02-source-scope",
   "runId": "2026-07-30T15-23-03-310Z",
   "generatedAt": "2026-07-30T15:23:03.310Z",
-  "report": "v2-source-scope/2026-07-30T15-23-03-310Z.json",
+  "report": "2026-07-30T15-23-03-310Z.json",
   "summary": {
     "total": 30,
     "passed": 21,

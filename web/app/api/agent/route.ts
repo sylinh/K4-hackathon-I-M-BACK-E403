@@ -3,14 +3,18 @@ import dayOneTranscript from "../../../content/transcript-04-clean.md?raw";
 import dayTwoTranscript from "../../../content/transcript-01-clean.md?raw";
 
 type AgentMode = "chat" | "quiz" | "flashcards";
+type SourceScope = "current-page" | "all-document";
 
 type AgentRequest = {
   mode?: AgentMode;
   question?: string;
   context?: string;
   page?: number;
+  pageCount?: number;
   materialId?: string;
   material?: string;
+  scope?: SourceScope;
+  focus?: string;
 };
 
 type TranscriptChunk = {
@@ -84,6 +88,15 @@ function retrieveChunks(
   limit = 7,
 ) {
   const chunks = chunksByMaterial[materialId] ?? [];
+  return rankChunks(chunks, question, context, limit);
+}
+
+function rankChunks(
+  chunks: TranscriptChunk[],
+  question: string,
+  context: string,
+  limit = 7,
+) {
   const queryTokens = new Set(normalizeTokens(`${question} ${context}`));
   const ranked = chunks
     .map((chunk, index) => {
@@ -105,6 +118,28 @@ function retrieveChunks(
     return selected.map((item) => item.chunk);
   }
   return ranked.slice(0, Math.min(limit, chunks.length)).map((item) => item.chunk);
+}
+
+function contextChunks(context: string) {
+  const matches = Array.from(
+    context.matchAll(
+      /\[Trang\s+(\d+)\]\s*([\s\S]*?)(?=\n\[Trang\s+\d+\]|$)/gi,
+    ),
+  );
+  if (matches.length === 0) {
+    const text = compact(context, 3200);
+    return text ? [{ id: "P001", text }] : [];
+  }
+  return matches.flatMap((match) => {
+    const text = compact(match[2], 3200);
+    if (!text) return [];
+    return [
+      {
+        id: `P${String(Number(match[1])).padStart(3, "0")}`,
+        text,
+      },
+    ];
+  });
 }
 
 function sourceBlock(chunks: TranscriptChunk[]) {
@@ -164,7 +199,9 @@ function fallbackChat(chunks: TranscriptChunk[], question: string) {
 }
 
 function fallbackQuiz(chunks: TranscriptChunk[]) {
-  return chunks.slice(0, 3).map((chunk, index) => {
+  if (chunks.length === 0) return [];
+  return Array.from({ length: 3 }, (_, index) => {
+    const chunk = chunks[index % chunks.length];
     const answer = compact(chunk.text, 150);
     return {
       question:
@@ -185,11 +222,15 @@ function fallbackQuiz(chunks: TranscriptChunk[]) {
 }
 
 function fallbackFlashcards(chunks: TranscriptChunk[]) {
-  return chunks.slice(0, 5).map((chunk) => ({
-    front: `Ý chính của đoạn [${chunk.id}] là gì?`,
-    back: compact(chunk.text, 260),
-    citation: chunk.id,
-  }));
+  if (chunks.length === 0) return [];
+  return Array.from({ length: 5 }, (_, index) => {
+    const chunk = chunks[index % chunks.length];
+    return {
+      front: `Ý chính ${index + 1} từ nguồn [${chunk.id}] là gì?`,
+      back: compact(chunk.text, 260),
+      citation: chunk.id,
+    };
+  });
 }
 
 function promptForMode(
@@ -197,31 +238,59 @@ function promptForMode(
   question: string,
   pageContext: string,
   sources: string,
+  options: {
+    scope: SourceScope;
+    material: string;
+    sourceKind: "paired-transcript" | "uploaded-document";
+    focus: string;
+    page: number;
+    pageCount: number;
+  },
 ) {
-  const common = `Bạn là trợ giảng VLearn. Chỉ được dùng NGUỒN BÀI GIẢNG bên dưới.
-- Không dùng kiến thức ngoài, không đoán, không trộn với buổi học khác.
+  const scopeDirection =
+    options.scope === "current-page"
+      ? `Chỉ giải thích nội dung thuộc trang ${options.page}; không mở rộng sang phần khác của tài liệu.`
+      : `Được tổng hợp trên toàn bộ ${options.pageCount} trang; ưu tiên các phần liên quan trực tiếp đến câu hỏi.`;
+  const sourceDirection =
+    options.sourceKind === "paired-transcript"
+      ? "Nguồn sự thật là transcript đã ghép đúng với bộ slide. Ngữ cảnh slide xác định phạm vi cần trả lời."
+      : "Nguồn sự thật là nội dung trích xuất trực tiếp từ file người dùng vừa tải lên.";
+  const citationFormat =
+    options.sourceKind === "paired-transcript" ? "Txx-xxx" : "Pxxx";
+
+  const common = `Bạn là trợ giảng VLearn cho tài liệu "${options.material}".
+
+PHẠM VI NGƯỜI DÙNG ĐÃ CHỌN:
+${scopeDirection}
+
+QUY TẮC NGUỒN:
+${sourceDirection}
+- Không dùng kiến thức ngoài, không đoán, không trộn với tài liệu khác.
 - Nếu nguồn không đủ, nói rõ chưa đủ căn cứ.
-- Mọi kết luận phải gắn mã trích dẫn dạng Txx-xxx có trong nguồn.
-- Ngữ cảnh trang chỉ dùng để xác định phần người học đang quan tâm; nguồn sự thật vẫn là transcript.
+- Mọi kết luận phải gắn mã trích dẫn dạng ${citationFormat} có trong nguồn.
+- Không được tạo mã trích dẫn không xuất hiện trong NGUỒN.
 
-NGỮ CẢNH TRANG:
-${compact(pageContext, 5000)}
+NGỮ CẢNH SLIDE ĐÃ CHỌN:
+${compact(pageContext, 7000)}
 
-NGUỒN BÀI GIẢNG:
+TRỌNG TÂM NGƯỜI HỌC ĐÃ BÔI SÁNG:
+${options.focus ? compact(options.focus, 2400) : "Không có; bám theo câu hỏi."}
+
+NGUỒN:
 ${sources}`;
 
   if (mode === "quiz") {
     return `${common}
 
 Tạo đúng 3 câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Trả về JSON thuần:
-{"quiz":[{"question":"...","options":["...","...","...","..."],"answer":0,"explain":"...","citation":"Txx-xxx"}]}
+{"quiz":[{"question":"...","options":["...","...","...","..."],"answer":0,"explain":"...","citation":"${citationFormat}"}]}
 answer là chỉ số 0-3. Mỗi câu chỉ có một đáp án đúng và không dùng phương án vô lý.`;
   }
   if (mode === "flashcards") {
     return `${common}
 
 Tạo 5 thẻ nhớ ngắn gọn. Trả về JSON thuần:
-{"flashcards":[{"front":"...","back":"...","citation":"Txx-xxx"}]}`;
+{"flashcards":[{"front":"...","back":"...","citation":"${citationFormat}"}]}`;
   }
   return `${common}
 
@@ -229,13 +298,13 @@ CÂU HỎI:
 ${compact(question, 1000)}
 
 Trả về JSON thuần:
-{"answer":"Câu trả lời tiếng Việt ngắn gọn, dễ hiểu, có mã [Txx-xxx] ngay sau ý tương ứng.","citations":["Txx-xxx"]}`;
+{"answer":"Câu trả lời tiếng Việt rõ ràng, bám đúng phạm vi đã chọn và có mã [${citationFormat}] ngay sau ý tương ứng.","citations":["${citationFormat}"]}`;
 }
 
 function schemaForMode(mode: AgentMode) {
   const citation = {
     type: "string",
-    description: "Mã đoạn nguồn dạng Txx-xxx có trong prompt.",
+    description: "Mã nguồn có trong prompt, dạng Txx-xxx hoặc Pxxx.",
   };
   if (mode === "quiz") {
     return {
@@ -355,12 +424,19 @@ export async function POST(request: Request) {
     const payload = (await request.json()) as AgentRequest;
     const mode = payload.mode ?? "chat";
     const materialId = payload.materialId?.trim() ?? "";
+    const material = payload.material?.trim() || "Tài liệu đang mở";
     const question = payload.question?.trim() ?? "";
     const context = payload.context?.trim() ?? "";
+    const focus = payload.focus?.trim() ?? "";
+    const scope: SourceScope =
+      payload.scope === "all-document" ? "all-document" : "current-page";
+    const page = Math.max(1, Number(payload.page) || 1);
+    const pageCount = Math.max(page, Number(payload.pageCount) || page);
+    const pairedMaterial = isMaterialId(materialId);
 
-    if (!isMaterialId(materialId)) {
+    if (!pairedMaterial && context.length < 20) {
       return Response.json(
-        { error: "Học liệu này chưa được liên kết với transcript." },
+        { error: "Tài liệu tải lên chưa có đủ nội dung để hỏi AI." },
         { status: 400 },
       );
     }
@@ -368,12 +444,28 @@ export async function POST(request: Request) {
       return Response.json({ error: "Cần có câu hỏi." }, { status: 400 });
     }
 
-    const chunks = retrieveChunks(materialId, question, context);
+    const chunks = pairedMaterial
+      ? retrieveChunks(
+          materialId,
+          question,
+          scope === "current-page" ? `${context}\n${focus}` : focus,
+        )
+      : rankChunks(contextChunks(context), question, focus, 7);
     const prompt = promptForMode(
       mode,
       question,
       context,
       sourceBlock(chunks),
+      {
+        scope,
+        material,
+        sourceKind: pairedMaterial
+          ? "paired-transcript"
+          : "uploaded-document",
+        focus,
+        page,
+        pageCount,
+      },
     );
     const liveResult = await callGemini(prompt, mode);
 

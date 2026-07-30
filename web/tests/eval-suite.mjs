@@ -8,10 +8,14 @@ const versionArgIndex = process.argv.findIndex((arg) => arg === "--version");
 const inlineVersionArg = process.argv.find((arg) =>
   arg.startsWith("--version="),
 );
+const registry = JSON.parse(
+  await readFile(resolve(evalDir, "versions.json"), "utf8"),
+);
 const suiteVersion =
   (versionArgIndex >= 0 ? process.argv[versionArgIndex + 1] : undefined) ||
   inlineVersionArg?.slice("--version=".length) ||
   process.env.EVAL_VERSION ||
+  registry.currentVersion ||
   "v1-baseline";
 
 if (!/^[a-z0-9][a-z0-9-]*$/.test(suiteVersion)) {
@@ -40,7 +44,8 @@ function normalize(value) {
 }
 
 function collectCitations(actual) {
-  const matches = JSON.stringify(actual).match(/T\d{2}-\d{3}/g) ?? [];
+  const matches =
+    JSON.stringify(actual).match(/(?:T\d{2}-\d{3}|P\d{3})/g) ?? [];
   return [...new Set(matches)];
 }
 

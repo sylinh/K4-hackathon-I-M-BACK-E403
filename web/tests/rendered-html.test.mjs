@@ -24,6 +24,12 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /bundledPdfPages/);
   assert.match(page, /IntersectionObserver/);
   assert.match(page, /loadBundledPdf/);
+  assert.match(page, /loadPdfPageText/);
+  assert.match(page, /selectedSourceContext/);
+  assert.match(page, /ContextScope/);
+  assert.match(page, /Slide đang xem/);
+  assert.match(page, /Toàn bộ slide/);
+  assert.match(page, /Tải một tài liệu khác/);
   assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.86\)/);
   assert.match(page, /pdf-text-layer/);
   assert.match(page, /previewDataUrl/);
@@ -85,6 +91,10 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /transcript-04-clean\.md\?raw/);
   assert.match(agentRoute, /transcript-01-clean\.md\?raw/);
   assert.match(agentRoute, /retrieveChunks/);
+  assert.match(agentRoute, /contextChunks/);
+  assert.match(agentRoute, /uploaded-document/);
+  assert.match(agentRoute, /all-document/);
+  assert.match(agentRoute, /Pxxx/);
   assert.match(agentRoute, /fallbackChat/);
   assert.match(agentRoute, /fallbackQuiz/);
   assert.match(agentRoute, /fallbackFlashcards/);

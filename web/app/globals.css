@@ -1187,6 +1187,93 @@ input:focus-visible {
   color: var(--blue-deep);
 }
 
+.source-scope {
+  flex: 0 0 auto;
+  padding: 10px 12px 0;
+}
+
+.source-scope-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 7px;
+}
+
+.source-scope-heading > span {
+  color: var(--ink);
+  font-size: 9px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.source-scope-heading > small {
+  max-width: 58%;
+  overflow: hidden;
+  color: var(--subtle);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-scope-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--canvas);
+}
+
+.source-scope-options > button {
+  min-width: 0;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 8px;
+  text-align: left;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.source-scope-options > button.active {
+  border-color: var(--line);
+  background: var(--paper);
+  color: var(--blue-deep);
+  box-shadow: 0 2px 7px rgba(20, 43, 79, 0.07);
+}
+
+.source-scope-options > button > svg {
+  flex: 0 0 auto;
+}
+
+.source-scope-options > button > span {
+  min-width: 0;
+}
+
+.source-scope-options strong,
+.source-scope-options small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.source-scope-options strong {
+  font-size: 9px;
+}
+
+.source-scope-options small {
+  margin-top: 2px;
+  color: var(--subtle);
+  font-size: 8px;
+}
+
 .context-card {
   margin: 11px 12px 0;
   padding: 10px;

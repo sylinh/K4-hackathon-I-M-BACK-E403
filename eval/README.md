@@ -4,6 +4,7 @@ Bộ eval kiểm thử hai gói học liệu:
 
 - `day-1-foundation`: `d1-slide-hackathon.pdf` + Transcript 04 (`T04-*`);
 - `day-2-product`: `d2-slide-hackathon.pdf` + Transcript 01 (`T01-*`).
+- file người dùng tải lên: citation theo trang (`P001`, `P002`, ...).
 
 ## Ba loại phiên bản
 
@@ -30,7 +31,7 @@ cd web
 npm run dev
 ```
 
-Chạy version mặc định `v1-baseline` ở terminal thứ hai:
+Chạy version được đánh dấu `currentVersion` trong `versions.json`:
 
 ```powershell
 cd web
@@ -40,7 +41,7 @@ npm run eval
 Chỉ định version:
 
 ```powershell
-npm run eval -- --version v1-baseline
+npm run eval -- --version v2-source-scope
 ```
 
 Có thể đổi URL và khoảng nghỉ:
@@ -48,14 +49,14 @@ Có thể đổi URL và khoảng nghỉ:
 ```powershell
 $env:EVAL_BASE_URL="http://localhost:3000"
 $env:EVAL_DELAY_MS="1200"
-npm run eval -- --version v1-baseline
+npm run eval -- --version v2-source-scope
 ```
 
 Mỗi lần chạy tạo một file timestamp mới. Runner không ghi đè báo cáo cũ.
 
 ## Tạo version tiếp theo
 
-1. Sao chép suite gần nhất sang `suites/v2-<mục-tiêu>.json`.
+1. Sao chép suite gần nhất sang `suites/vN-<mục-tiêu>.json`.
 2. Đổi `version`, `stage` và chỉ bổ sung case liên quan tới mục tiêu giai đoạn.
 3. Thêm version vào `versions.json` với trạng thái `active`.
 4. Chạy suite và lưu kết luận vào `CHANGELOG.md`.

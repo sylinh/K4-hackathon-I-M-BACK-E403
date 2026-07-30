@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "currentVersion": "v1-baseline",
+  "currentVersion": "v2-source-scope",
   "stages": [
     {
       "stage": 1,
@@ -13,10 +13,12 @@
     },
     {
       "stage": 2,
-      "version": "v2-scope-guard",
-      "status": "planned",
-      "objective": "Agent phải hỏi lại câu mơ hồ và từ chối câu ngoài phạm vi hoặc sai nguồn.",
-      "exitCriteria": "Source isolation và out-of-scope đều đạt 100%."
+      "version": "v2-source-scope",
+      "status": "completed",
+      "objective": "Cho phép hỏi AI từ file tải lên và điều khiển phạm vi theo slide hiện tại hoặc toàn bộ tài liệu.",
+      "suite": "suites/v2-source-scope.json",
+      "report": "results/v2-source-scope/2026-07-30T15-23-03-310Z.json",
+      "exitCriteria": "Chat, quiz và flashcard từ file tải lên dùng citation Pxxx; hai phạm vi nguồn hoạt động độc lập."
     },
     {
       "stage": 3,

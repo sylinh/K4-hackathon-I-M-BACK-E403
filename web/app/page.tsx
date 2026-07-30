@@ -103,6 +103,7 @@ type Flashcard = {
 };
 
 type AgentTab = "chat" | "quiz" | "flashcards";
+type ContextScope = "current-page" | "all-document";
 
 const accentOrder: SlidePage["accent"][] = ["blue", "coral", "mint", "amber"];
 
@@ -220,6 +221,7 @@ type PdfJsModule = typeof import("pdfjs-dist");
 
 let pdfWorkerConfigured = false;
 const pdfDocumentCache = new Map<string, Promise<PDFDocumentProxy>>();
+const pdfPageTextCache = new Map<string, Map<number, Promise<string>>>();
 
 async function loadPdfJs() {
   const pdfjs = await import("pdfjs-dist");
@@ -241,6 +243,34 @@ async function loadBundledPdf(sourceUrl: string) {
       throw error;
     });
   pdfDocumentCache.set(sourceUrl, loading);
+  return loading;
+}
+
+async function loadPdfPageText(sourceUrl: string, pageNumber: number) {
+  let documentPages = pdfPageTextCache.get(sourceUrl);
+  if (!documentPages) {
+    documentPages = new Map<number, Promise<string>>();
+    pdfPageTextCache.set(sourceUrl, documentPages);
+  }
+  const cached = documentPages.get(pageNumber);
+  if (cached) return cached;
+
+  const loading = loadBundledPdf(sourceUrl)
+    .then(async (pdf) => {
+      const pdfPage = await pdf.getPage(pageNumber);
+      const content = await pdfPage.getTextContent();
+      const text = content.items
+        .map((item) => ("str" in item ? cleanText(item.str) : ""))
+        .filter(Boolean)
+        .join("\n");
+      pdfPage.cleanup();
+      return `[Trang ${pageNumber}]\n${text}`;
+    })
+    .catch((error) => {
+      documentPages?.delete(pageNumber);
+      throw error;
+    });
+  documentPages.set(pageNumber, loading);
   return loading;
 }
 
@@ -569,6 +599,8 @@ export default function Home() {
   const [messages, setMessages] = useState(initialMessages);
   const [question, setQuestion] = useState("");
   const [agentTab, setAgentTab] = useState<AgentTab>("chat");
+  const [contextScope, setContextScope] =
+    useState<ContextScope>("current-page");
   const [isThinking, setIsThinking] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processingLabel, setProcessingLabel] = useState("");
@@ -643,9 +675,18 @@ export default function Home() {
   function selectMaterial(material: Material) {
     setActiveMaterialId(material.id);
     setPageIndex(0);
+    setContextScope("current-page");
     setHighlights([]);
     setGeneratedQuiz([]);
     setGeneratedFlashcards([]);
+    setMessages([
+      {
+        id: Date.now(),
+        role: "assistant",
+        text: `Đã chọn “${material.name}”. Bạn có thể hỏi theo slide đang xem hoặc toàn bộ tài liệu.`,
+        citation: material.transcriptLabel ?? "Tài liệu tải lên",
+      },
+    ]);
     resetQuiz();
   }
 
@@ -751,23 +792,49 @@ export default function Home() {
     );
     setUploadMessage("");
 
+    let localSourceUrl: string | undefined;
     try {
-      const pages = await parseMaterial(file);
+      const materialId = `material-${Date.now()}`;
+      const materialName = file.name.replace(/\.[^/.]+$/, "");
+      let pages: SlidePage[];
+      if (typeFromFile(file) === "PDF") {
+        localSourceUrl = URL.createObjectURL(file);
+        const pdf = await loadBundledPdf(localSourceUrl);
+        pages = bundledPdfPages(
+          materialId,
+          materialName,
+          Math.min(pdf.numPages, 60),
+        );
+      } else {
+        pages = await parseMaterial(file);
+      }
       if (pages.length === 0) throw new Error("empty");
       setProcessingLabel("Đang lưu và tạo ngữ cảnh học tập…");
       const stored = await storeFile(file);
       const material: Material = {
-        id: `material-${Date.now()}`,
-        name: file.name.replace(/\.[^/.]+$/, ""),
+        id: materialId,
+        name: materialName,
         type: typeFromFile(file),
         pages,
         status: stored ? "Đã lưu" : "Cục bộ",
         updated: "Vừa thêm",
+        sourceUrl: localSourceUrl,
       };
       setMaterials((current) => [material, ...current]);
       setActiveMaterialId(material.id);
       setPageIndex(0);
+      setContextScope("current-page");
       setHighlights([]);
+      setGeneratedQuiz([]);
+      setGeneratedFlashcards([]);
+      setMessages([
+        {
+          id: Date.now() + 1,
+          role: "assistant",
+          text: `“${material.name}” đã sẵn sàng. Chọn nguồn ở mục Hỏi AI rồi đặt câu hỏi để kiểm tra chatbot.`,
+          citation: `${material.type} • ${pages.length} trang`,
+        },
+      ]);
       setUploadMessage(
         stored
           ? `Đã nhập ${pages.length} trang, giữ nguyên bố cục và lưu an toàn.`
@@ -775,6 +842,11 @@ export default function Home() {
       );
       setToast("Tài liệu đã sẵn sàng");
     } catch {
+      if (localSourceUrl) {
+        pdfDocumentCache.delete(localSourceUrl);
+        pdfPageTextCache.delete(localSourceUrl);
+        URL.revokeObjectURL(localSourceUrl);
+      }
       setUploadMessage(
         "Không đọc được cấu trúc tệp này. Hãy thử xuất lại tài liệu hoặc dùng bản PDF.",
       );
@@ -818,11 +890,65 @@ export default function Home() {
     setMaterials((current) => [material, ...current]);
     setActiveMaterialId(material.id);
     setPageIndex(0);
+    setContextScope("current-page");
     setPasteValue("");
     setShowPaste(false);
     setHighlights([]);
+    setGeneratedQuiz([]);
+    setGeneratedFlashcards([]);
+    setMessages([
+      {
+        id: Date.now() + 1,
+        role: "assistant",
+        text: `Nội dung “${material.name}” đã sẵn sàng để hỏi AI.`,
+        citation: `TEXT • ${pages.length} trang`,
+      },
+    ]);
     setToast("Đã tạo tài liệu từ nội dung dán");
   }
+
+  function serializePageContent(slidePage: SlidePage, index: number) {
+    return [
+      `[Trang ${index + 1}]`,
+      slidePage.title,
+      slidePage.subtitle,
+      ...slidePage.paragraphs,
+      ...slidePage.points,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  }
+
+  async function selectedSourceContext() {
+    const pageIndexes =
+      contextScope === "current-page"
+        ? [pageIndex]
+        : activeMaterial.pages.map((_, index) => index);
+
+    if (activeMaterial.sourceUrl && activeMaterial.type === "PDF") {
+      try {
+        const pageTexts = await Promise.all(
+          pageIndexes.map((index) =>
+            loadPdfPageText(activeMaterial.sourceUrl!, index + 1),
+          ),
+        );
+        return pageTexts.join("\n");
+      } catch {
+        // The extracted page metadata remains a usable local fallback.
+      }
+    }
+
+    return pageIndexes
+      .map((index) =>
+        serializePageContent(activeMaterial.pages[index], index),
+      )
+      .join("\n");
+  }
+
+  const sourceScopeLabel =
+    contextScope === "current-page"
+      ? `Slide đang xem • Trang ${pageIndex + 1}`
+      : `Toàn bộ tài liệu • ${activeMaterial.pages.length} trang`;
 
   async function sendQuestion(event?: FormEvent, promptOverride?: string) {
     event?.preventDefault();
@@ -837,14 +963,10 @@ export default function Home() {
     setQuestion("");
     setIsThinking(true);
 
-    const context =
-      highlights.length > 0
-        ? highlights.join("\n")
-        : [page.title, page.subtitle, ...page.paragraphs, ...page.points]
-            .filter(Boolean)
-            .join("\n");
+    let context = serializePageContent(page, pageIndex);
 
     try {
+      context = await selectedSourceContext();
       const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -852,7 +974,10 @@ export default function Home() {
           mode: "chat",
           question: prompt,
           context,
+          focus: highlights.join("\n"),
+          scope: contextScope,
           page: pageIndex + 1,
+          pageCount: activeMaterial.pages.length,
           materialId: activeMaterial.id,
           material: activeMaterial.name,
         }),
@@ -874,7 +999,7 @@ export default function Home() {
               ? `${activeMaterial.name} • ${result.citations
                   .map((id) => `[${id}]`)
                   .join(" ")}`
-              : `${activeMaterial.name} • Trang ${pageIndex + 1}`,
+              : `${activeMaterial.name} • ${sourceScopeLabel}`,
           live: result.live,
         },
       ]);
@@ -885,7 +1010,7 @@ export default function Home() {
           id: Date.now() + 1,
           role: "assistant",
           text: `Dựa trên phần đang chọn, ý chính là: ${context.slice(0, 330)}${context.length > 330 ? "…" : ""}`,
-          citation: `${activeMaterial.name} • Trang ${pageIndex + 1}`,
+          citation: `${activeMaterial.name} • ${sourceScopeLabel}`,
         },
       ]);
     } finally {
@@ -893,18 +1018,11 @@ export default function Home() {
     }
   }
 
-  function currentLearningContext() {
-    return highlights.length > 0
-      ? highlights.join("\n")
-      : [page.title, page.subtitle, ...page.paragraphs, ...page.points]
-          .filter(Boolean)
-          .join("\n");
-  }
-
   async function requestLearningContent(mode: "quiz" | "flashcards") {
     setIsGeneratingLearning(true);
     setLearningLive(false);
     try {
+      const context = await selectedSourceContext();
       const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -914,8 +1032,11 @@ export default function Home() {
             mode === "quiz"
               ? "Tạo câu hỏi kiểm tra hiểu và áp dụng"
               : "Tạo thẻ ghi nhớ các ý quan trọng",
-          context: currentLearningContext(),
+          context,
+          focus: highlights.join("\n"),
+          scope: contextScope,
           page: pageIndex + 1,
+          pageCount: activeMaterial.pages.length,
           materialId: activeMaterial.id,
           material: activeMaterial.name,
         }),
@@ -1442,6 +1563,49 @@ export default function Home() {
 
         {agentTab === "chat" && (
           <>
+            <div className="source-scope">
+              <div className="source-scope-heading">
+                <span>Nguồn trả lời</span>
+                <small>{sourceScopeLabel}</small>
+              </div>
+              <div
+                className="source-scope-options"
+                role="radiogroup"
+                aria-label="Chọn phạm vi tài liệu cho AI"
+              >
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={contextScope === "current-page"}
+                  className={
+                    contextScope === "current-page" ? "active" : ""
+                  }
+                  onClick={() => setContextScope("current-page")}
+                >
+                  <FileText size={15} />
+                  <span>
+                    <strong>Slide đang xem</strong>
+                    <small>Chỉ trang {pageIndex + 1}</small>
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={contextScope === "all-document"}
+                  className={
+                    contextScope === "all-document" ? "active" : ""
+                  }
+                  onClick={() => setContextScope("all-document")}
+                >
+                  <BookOpen size={15} />
+                  <span>
+                    <strong>Toàn bộ slide</strong>
+                    <small>{activeMaterial.pages.length} trang</small>
+                  </span>
+                </button>
+              </div>
+            </div>
+
             <div className="context-card">
               <div className="context-heading">
                 <span>
@@ -1453,8 +1617,10 @@ export default function Home() {
               </div>
               {highlights.length === 0 ? (
                 <p>
-                  Chưa có đoạn bôi sáng. AI sẽ dùng toàn bộ nội dung trang{" "}
-                  {pageIndex + 1}.
+                  Chưa có đoạn ưu tiên. AI sẽ tìm câu trả lời trong{" "}
+                  {contextScope === "current-page"
+                    ? `slide ${pageIndex + 1}`
+                    : "toàn bộ tài liệu"}.
                 </p>
               ) : (
                 <div className="highlight-list">
@@ -1540,14 +1706,24 @@ export default function Home() {
                     void sendQuestion();
                   }
                 }}
-                placeholder="Hỏi về phần bạn vừa bôi sáng…"
+                placeholder={
+                  contextScope === "current-page"
+                    ? `Hỏi về slide ${pageIndex + 1}…`
+                    : "Hỏi trên toàn bộ tài liệu…"
+                }
                 rows={2}
               />
               <div className="composer-footer">
-                <button type="button" className="attach-button" aria-label="Đính kèm">
+                <button
+                  type="button"
+                  className="attach-button"
+                  onClick={() => inputRef.current?.click()}
+                  aria-label="Tải một tài liệu khác"
+                  title="Tải một tài liệu khác"
+                >
                   <Paperclip size={16} />
                 </button>
-                <span>AI chỉ dùng tài liệu đang mở</span>
+                <span>{sourceScopeLabel}</span>
                 <button
                   className="send-button"
                   type="submit"
@@ -1566,8 +1742,10 @@ export default function Home() {
             {isGeneratingLearning ? (
               <div className="learning-loading">
                 <Sparkles size={20} />
-                <strong>Đang tạo quiz từ đúng transcript…</strong>
-                <span>{activeMaterial.transcriptLabel}</span>
+                <strong>Đang tạo quiz từ đúng nguồn đã chọn…</strong>
+                <span>
+                  {activeMaterial.transcriptLabel ?? sourceScopeLabel}
+                </span>
               </div>
             ) : quiz.length === 0 ? (
               <div className="learning-loading">
@@ -1661,8 +1839,7 @@ export default function Home() {
                       : "Thử ôn lại phần bôi sáng nhé."}
                 </h3>
                 <p>
-                  Focus AI đã đối chiếu từng đáp án với nội dung ở trang{" "}
-                  {pageIndex + 1}.
+                  Focus AI đã đối chiếu từng đáp án với {sourceScopeLabel.toLowerCase()}.
                 </p>
                 <div className="result-stats">
                   <div>
@@ -1690,8 +1867,10 @@ export default function Home() {
             {isGeneratingLearning ? (
               <div className="learning-loading">
                 <Sparkles size={20} />
-                <strong>Đang tạo thẻ từ đúng transcript…</strong>
-                <span>{activeMaterial.transcriptLabel}</span>
+                <strong>Đang tạo thẻ từ đúng nguồn đã chọn…</strong>
+                <span>
+                  {activeMaterial.transcriptLabel ?? sourceScopeLabel}
+                </span>
               </div>
             ) : flashcards.length === 0 ? (
               <div className="learning-loading">
