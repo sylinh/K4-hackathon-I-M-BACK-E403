@@ -3,6 +3,8 @@ import dayOneTranscript from "../../../content/transcript-04-clean.md?raw";
 import dayTwoTranscript from "../../../content/transcript-01-clean.md?raw";
 
 type AgentMode = "chat" | "quiz" | "flashcards";
+
+const QUIZ_COUNT = 15;
 type SourceScope = "current-page" | "all-document";
 type ResponseLanguage = "vi" | "en";
 
@@ -535,7 +537,7 @@ function fallbackQuiz(
   language: ResponseLanguage,
 ) {
   if (chunks.length === 0) return [];
-  return Array.from({ length: 3 }, (_, index) => {
+  return Array.from({ length: QUIZ_COUNT }, (_, index) => {
     const chunk = chunks[index % chunks.length];
     const answer = compact(chunk.text, 150);
     return {
@@ -661,7 +663,7 @@ ${sources}
   if (mode === "quiz") {
     return `${common}
 
-Tạo đúng 3 câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Trả về JSON thuần:
+Tạo đúng ${QUIZ_COUNT} câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Trả về JSON thuần:
 {"quiz":[{"question":"...","options":["...","...","...","..."],"answer":0,"explain":"...","citation":"${citationFormat}"}]}
 answer là chỉ số 0-3. Mỗi câu chỉ có một đáp án đúng và không dùng phương án vô lý.`;
   }
@@ -693,8 +695,8 @@ function schemaForMode(mode: AgentMode) {
       properties: {
         quiz: {
           type: "array",
-          minItems: 3,
-          maxItems: 3,
+          minItems: QUIZ_COUNT,
+          maxItems: QUIZ_COUNT,
           items: {
             type: "object",
             properties: {
@@ -991,7 +993,7 @@ export async function POST(request: Request) {
     if (mode === "quiz") {
       const quiz =
         Array.isArray(liveResult?.quiz) &&
-        liveResult.quiz.length === 3 &&
+        liveResult.quiz.length === QUIZ_COUNT &&
         liveResult.quiz.every(
           (item) =>
             item &&
@@ -999,7 +1001,7 @@ export async function POST(request: Request) {
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
         )
-        ? liveResult.quiz.slice(0, 3)
+        ? liveResult.quiz.slice(0, QUIZ_COUNT)
         : fallbackQuiz(primaryChunks, language);
       return Response.json({ quiz, live: Boolean(liveResult) });
     }

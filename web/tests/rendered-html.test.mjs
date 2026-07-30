@@ -170,6 +170,8 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /primaryChunks/);
   assert.match(agentRoute, /language: ResponseLanguage/);
   assert.match(agentRoute, /fallbackQuiz/);
+  assert.match(agentRoute, /const QUIZ_COUNT = 15/);
+  assert.match(agentRoute, /liveResult\.quiz\.length === QUIZ_COUNT/);
   assert.match(agentRoute, /fallbackFlashcards/);
   assert.match(materialRoute, /20 \* 1024 \* 1024/);
   assert.match(materialRoute, /MATERIALS\.put/);
