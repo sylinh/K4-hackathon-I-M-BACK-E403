@@ -38,7 +38,6 @@ import {
   FormEvent,
   MouseEvent,
   useEffect,
-  useMemo,
   useRef,
   useState,
 } from "react";
@@ -72,6 +71,8 @@ type Material = {
   pages: SlidePage[];
   status: "Đã lưu" | "Cục bộ";
   updated: string;
+  sourceUrl?: string;
+  transcriptLabel?: string;
 };
 
 type ChatMessage = {
@@ -87,109 +88,59 @@ type QuizQuestion = {
   options: string[];
   answer: number;
   explain: string;
+  citation?: string;
+};
+
+type Flashcard = {
+  front: string;
+  back: string;
+  citation?: string;
 };
 
 type AgentTab = "chat" | "quiz" | "flashcards";
 
 const accentOrder: SlidePage["accent"][] = ["blue", "coral", "mint", "amber"];
 
-const starterDeck: Material = {
-  id: "prompt-engineering",
-  name: "Prompt Engineering thực chiến",
-  type: "PDF",
-  status: "Đã lưu",
-  updated: "Vừa xem",
-  pages: [
-    {
-      id: "slide-1",
-      eyebrow: "AI FOUNDATION • BÀI 04",
-      title: "Prompt Engineering & Tool Calling",
-      subtitle: "Làm sao để AI hiểu đúng, trả lời có căn cứ và biết khi nào cần dùng công cụ?",
-      paragraphs: [
-        "Prompt tốt không chỉ là một câu lệnh hay. Đó là một bản thiết kế ngữ cảnh giúp mô hình hiểu mục tiêu, giới hạn và tiêu chuẩn của câu trả lời.",
-      ],
-      points: [
-        "Đặt mục tiêu rõ ràng",
-        "Cung cấp đủ ngữ cảnh",
-        "Quy định định dạng đầu ra",
-      ],
-      accent: "blue",
-    },
-    {
-      id: "slide-2",
-      eyebrow: "01 • PROMPT CÓ CẤU TRÚC",
-      title: "Bốn lớp của một prompt hiệu quả",
-      subtitle: "Từ yêu cầu mơ hồ đến một chỉ dẫn mà AI có thể thực thi và tự kiểm tra.",
-      paragraphs: [
-        "Một prompt đáng tin cậy nên nói rõ vai trò, nhiệm vụ, ngữ cảnh và ràng buộc. Khi thiếu một lớp, mô hình có xu hướng tự lấp khoảng trống bằng giả định.",
-        "Tiêu chí hoàn thành giúp mô hình biết thế nào là một kết quả đủ tốt, thay vì chỉ tạo ra câu trả lời nghe có vẻ hợp lý.",
-      ],
-      points: [
-        "Role — AI đang đóng vai trò gì?",
-        "Task — Kết quả cụ thể cần tạo là gì?",
-        "Context — Dữ liệu và tình huống nào liên quan?",
-        "Constraints — Điều gì không được phép sai?",
-      ],
-      accent: "coral",
-    },
-    {
-      id: "slide-3",
-      eyebrow: "02 • TOOL CALLING",
-      title: "Khi nào AI nên dùng công cụ?",
-      subtitle: "Mô hình suy luận; công cụ cung cấp dữ liệu hoặc thực hiện hành động.",
-      paragraphs: [
-        "Tool calling phù hợp khi câu trả lời phụ thuộc vào dữ liệu thay đổi theo thời gian, phép tính chính xác hoặc hành động trên một hệ thống bên ngoài.",
-        "Agent cần kiểm tra đầu vào trước khi gọi công cụ, đọc kết quả trả về và giải thích rõ phần nào là dữ kiện, phần nào là suy luận.",
-      ],
-      points: [
-        "Tra cứu thông tin mới nhất",
-        "Tính toán và xử lý dữ liệu",
-        "Gửi yêu cầu đến hệ thống khác",
-      ],
-      accent: "mint",
-    },
-    {
-      id: "slide-4",
-      eyebrow: "03 • KIỂM TRA HIỂU",
-      title: "Một vòng lặp học chủ động",
-      subtitle: "Đọc ít hơn, tự nhớ lại nhiều hơn và nhận phản hồi ngay khi vừa học.",
-      paragraphs: [
-        "Active recall buộc người học tự lấy kiến thức ra khỏi trí nhớ. Flashcard phù hợp để ghi nhớ khái niệm; quiz tình huống phù hợp để kiểm tra khả năng áp dụng.",
-      ],
-      points: [
-        "Chọn đoạn kiến thức quan trọng",
-        "Tự trả lời trước khi xem đáp án",
-        "Ôn lại điểm sai theo khoảng cách",
-      ],
-      accent: "amber",
-    },
-  ],
-};
-
 const initialMaterials: Material[] = [
-  starterDeck,
   {
-    id: "ai-agent-notes",
-    name: "Ghi chú xây dựng AI Agent",
-    type: "DOCX",
+    id: "day-1-foundation",
+    name: "Day 1 · AI & LLM Foundation",
+    type: "PDF",
     status: "Đã lưu",
-    updated: "Hôm qua",
+    updated: "Học liệu lớp",
+    sourceUrl: "/materials/d1-slide-hackathon.pdf",
+    transcriptLabel: "Transcript 04 · T04",
     pages: [
       {
-        id: "doc-1",
-        eyebrow: "GHI CHÚ • CHƯƠNG 01",
-        title: "Agent khác chatbot ở điểm nào?",
-        subtitle: "Từ phản hồi một lượt đến chuỗi quyết định có mục tiêu.",
+        id: "day-1-loading",
+        eyebrow: "AI IN ACTION · DAY 01",
+        title: "AI & LLM Foundation",
+        subtitle: "Đang nạp slide và liên kết Transcript 04…",
+        paragraphs: [],
+        points: [],
+        accent: "blue",
+      },
+    ],
+  },
+  {
+    id: "day-2-product",
+    name: "Day 2 · Xác định bài toán cho AI",
+    type: "PDF",
+    status: "Đã lưu",
+    updated: "Học liệu lớp",
+    sourceUrl: "/materials/d2-slide-hackathon.pdf",
+    transcriptLabel: "Transcript 01 · T01",
+    pages: [
+      {
+        id: "day-2-loading",
+        eyebrow: "AI IN ACTION · DAY 02",
+        title: "Xác định bài toán cho AI",
+        subtitle: "Đang nạp slide và liên kết Transcript 01…",
         paragraphs: [
-          "Một AI agent quan sát trạng thái, chọn hành động, sử dụng công cụ và cập nhật kế hoạch dựa trên kết quả nhận được.",
-          "Mức tự chủ cần đi cùng cơ chế kiểm soát: giới hạn phạm vi, xác nhận hành động nhạy cảm và lưu dấu vết quyết định.",
+          "Từ yêu cầu mơ hồ đến Problem Statement rõ ràng.",
         ],
-        points: [
-          "Mục tiêu rõ ràng",
-          "Bộ công cụ có giới hạn",
-          "Bộ nhớ và vòng phản hồi",
-        ],
-        accent: "mint",
+        points: [],
+        accent: "coral",
       },
     ],
   },
@@ -199,47 +150,8 @@ const initialMessages: ChatMessage[] = [
   {
     id: 1,
     role: "assistant",
-    text: "Chào Hoàng! Mình đang theo dõi trang bạn đọc. Hãy bôi sáng một ý quan trọng, rồi hỏi mình hoặc tạo ngay quiz và flashcard.",
-    citation: "Nguồn đang mở • Trang 1",
-  },
-];
-
-const defaultQuiz: QuizQuestion[] = [
-  {
-    question: "Đâu là vai trò quan trọng nhất của ngữ cảnh trong một prompt?",
-    options: [
-      "Làm câu lệnh dài hơn",
-      "Giảm những giả định không cần thiết của mô hình",
-      "Bắt mô hình luôn dùng công cụ",
-      "Thay thế tiêu chí hoàn thành",
-    ],
-    answer: 1,
-    explain:
-      "Ngữ cảnh cung cấp dữ kiện và tình huống liên quan, nhờ đó mô hình ít phải tự đoán phần còn thiếu.",
-  },
-  {
-    question: "Khi nào agent nên ưu tiên gọi công cụ?",
-    options: [
-      "Khi cần dữ liệu mới hoặc phép tính chính xác",
-      "Khi câu trả lời có thể viết ngắn",
-      "Khi người dùng dùng từ chuyên môn",
-      "Trong mọi lượt hội thoại",
-    ],
-    answer: 0,
-    explain:
-      "Công cụ phù hợp khi mô hình cần dữ liệu bên ngoài, dữ liệu biến động hoặc một thao tác chính xác.",
-  },
-  {
-    question: "Cặp hoạt động nào mô tả đúng học chủ động?",
-    options: [
-      "Đọc lại và gạch chân mọi dòng",
-      "Xem video và chép nguyên văn",
-      "Tự nhớ lại và nhận phản hồi",
-      "Tóm tắt mà không kiểm tra",
-    ],
-    answer: 2,
-    explain:
-      "Active recall yêu cầu người học tự lấy kiến thức ra khỏi trí nhớ rồi kiểm tra lại bằng phản hồi.",
+    text: "Mình chỉ trả lời từ slide và transcript đã liên kết với đúng buổi học đang mở. Hãy chọn một đoạn hoặc đặt câu hỏi về trang hiện tại.",
+    citation: "Day 1 · Transcript T04",
   },
 ];
 
@@ -443,66 +355,11 @@ async function parseMaterial(file: File): Promise<SlidePage[]> {
   return extractTextPages(file);
 }
 
-function buildFlashcards(highlights: string[], page: SlidePage) {
-  const source =
-    highlights.length > 0
-      ? highlights
-      : [page.title, ...page.points, ...page.paragraphs];
-  const cards = source.slice(0, 5).map((text, index) => {
-    const shortText = cleanText(text);
-    return {
-      front:
-        index === 0
-          ? `Ý chính của “${shortText.slice(0, 62)}${shortText.length > 62 ? "…" : ""}” là gì?`
-          : `Giải thích bằng lời của bạn: ${shortText.slice(0, 78)}${shortText.length > 78 ? "…" : ""}`,
-      back: shortText,
-    };
-  });
-  return cards.length > 0
-    ? cards
-    : [
-        {
-          front: "Hãy chọn một đoạn trong tài liệu.",
-          back: "Nội dung bôi sáng sẽ trở thành đáp án của flashcard.",
-        },
-      ];
-}
-
-function buildQuiz(highlights: string[], page: SlidePage): QuizQuestion[] {
-  if (highlights.length === 0) return defaultQuiz;
-  const source = highlights.join(" ");
-  const keyword =
-    source
-      .split(/\s+/)
-      .filter((word) => word.length > 6)
-      .slice(0, 2)
-      .join(" ") || page.title;
-  return [
-    {
-      question: "Phát biểu nào khớp nhất với đoạn bạn vừa bôi sáng?",
-      options: [
-        source.slice(0, 145),
-        "AI luôn có thể tự suy ra dữ kiện còn thiếu mà không cần ngữ cảnh.",
-        "Mọi câu hỏi đều bắt buộc phải gọi một công cụ bên ngoài.",
-        "Định dạng đầu ra không ảnh hưởng đến chất lượng câu trả lời.",
-      ],
-      answer: 0,
-      explain: `Đáp án được tạo trực tiếp từ phần đã chọn ở trang hiện tại: “${source.slice(0, 115)}${source.length > 115 ? "…" : ""}”`,
-    },
-    {
-      question: `Đâu là từ khóa gần nhất với trọng tâm của đoạn đã chọn?`,
-      options: [keyword, "Trang trí giao diện", "Tốc độ gõ phím", "Lưu trữ ngoại tuyến"],
-      answer: 0,
-      explain:
-        "Từ khóa được rút ra từ cụm nội dung bạn đã bôi sáng, không dùng phần ngoài tài liệu.",
-    },
-    defaultQuiz[2],
-  ];
-}
-
 export default function Home() {
   const [materials, setMaterials] = useState(initialMaterials);
-  const [activeMaterialId, setActiveMaterialId] = useState(starterDeck.id);
+  const [activeMaterialId, setActiveMaterialId] = useState(
+    initialMaterials[0].id,
+  );
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [highlightMode, setHighlightMode] = useState(true);
@@ -524,23 +381,22 @@ export default function Home() {
   const [quizChecked, setQuizChecked] = useState(false);
   const [quizComplete, setQuizComplete] = useState(false);
   const [flippedCards, setFlippedCards] = useState<number[]>([]);
+  const [generatedQuiz, setGeneratedQuiz] = useState<QuizQuestion[]>([]);
+  const [generatedFlashcards, setGeneratedFlashcards] = useState<Flashcard[]>([]);
+  const [isGeneratingLearning, setIsGeneratingLearning] = useState(false);
+  const [learningLive, setLearningLive] = useState(false);
   const [toast, setToast] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const selectionHandledRef = useRef(false);
+  const loadedCourseIdsRef = useRef(new Set<string>());
 
   const activeMaterial =
     materials.find((material) => material.id === activeMaterialId) ?? materials[0];
   const page = activeMaterial.pages[pageIndex] ?? activeMaterial.pages[0];
-  const quiz = useMemo(
-    () => buildQuiz(highlights, page),
-    [highlights, page],
-  );
-  const flashcards = useMemo(
-    () => buildFlashcards(highlights, page),
-    [highlights, page],
-  );
+  const quiz = generatedQuiz;
+  const flashcards = generatedFlashcards;
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -556,10 +412,56 @@ export default function Home() {
     if (viewerRef.current) viewerRef.current.scrollTop = 0;
   }, [activeMaterialId]);
 
+  useEffect(() => {
+    if (
+      !activeMaterial.sourceUrl ||
+      loadedCourseIdsRef.current.has(activeMaterial.id)
+    ) {
+      return;
+    }
+    loadedCourseIdsRef.current.add(activeMaterial.id);
+    let cancelled = false;
+
+    async function loadCourseSlides() {
+      setIsProcessing(true);
+      setProcessingLabel(`Đang nạp ${activeMaterial.name}…`);
+      try {
+        const response = await fetch(activeMaterial.sourceUrl!);
+        if (!response.ok) throw new Error("slides");
+        const blob = await response.blob();
+        const file = new File([blob], `${activeMaterial.id}.pdf`, {
+          type: "application/pdf",
+        });
+        const pages = await extractPdfPages(file);
+        if (cancelled || pages.length === 0) return;
+        setMaterials((current) =>
+          current.map((material) =>
+            material.id === activeMaterial.id ? { ...material, pages } : material,
+          ),
+        );
+        setToast(
+          `${pages.length} trang đã liên kết với ${activeMaterial.transcriptLabel}`,
+        );
+      } catch {
+        loadedCourseIdsRef.current.delete(activeMaterial.id);
+        setToast("Không thể nạp slide của buổi học");
+      } finally {
+        if (!cancelled) setIsProcessing(false);
+      }
+    }
+
+    void loadCourseSlides();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMaterial]);
+
   function selectMaterial(material: Material) {
     setActiveMaterialId(material.id);
     setPageIndex(0);
     setHighlights([]);
+    setGeneratedQuiz([]);
+    setGeneratedFlashcards([]);
     resetQuiz();
   }
 
@@ -763,14 +665,17 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
+          mode: "chat",
           question: prompt,
           context,
           page: pageIndex + 1,
+          materialId: activeMaterial.id,
           material: activeMaterial.name,
         }),
       });
       const result = (await response.json()) as {
         answer?: string;
+        citations?: string[];
         live?: boolean;
       };
       if (!response.ok || !result.answer) throw new Error("agent");
@@ -780,7 +685,12 @@ export default function Home() {
           id: Date.now() + 1,
           role: "assistant",
           text: result.answer,
-          citation: `${activeMaterial.name} • Trang ${pageIndex + 1}`,
+          citation:
+            result.citations && result.citations.length > 0
+              ? `${activeMaterial.name} • ${result.citations
+                  .map((id) => `[${id}]`)
+                  .join(" ")}`
+              : `${activeMaterial.name} • Trang ${pageIndex + 1}`,
           live: result.live,
         },
       ]);
@@ -799,16 +709,70 @@ export default function Home() {
     }
   }
 
-  function createQuiz() {
-    resetQuiz();
-    setAgentTab("quiz");
-    setRightOpen(true);
+  function currentLearningContext() {
+    return highlights.length > 0
+      ? highlights.join("\n")
+      : [page.title, page.subtitle, ...page.paragraphs, ...page.points]
+          .filter(Boolean)
+          .join("\n");
   }
 
-  function createFlashcards() {
+  async function requestLearningContent(mode: "quiz" | "flashcards") {
+    setIsGeneratingLearning(true);
+    setLearningLive(false);
+    try {
+      const response = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          mode,
+          question:
+            mode === "quiz"
+              ? "Tạo câu hỏi kiểm tra hiểu và áp dụng"
+              : "Tạo thẻ ghi nhớ các ý quan trọng",
+          context: currentLearningContext(),
+          page: pageIndex + 1,
+          materialId: activeMaterial.id,
+          material: activeMaterial.name,
+        }),
+      });
+      const result = (await response.json()) as {
+        quiz?: QuizQuestion[];
+        flashcards?: Flashcard[];
+        live?: boolean;
+        error?: string;
+      };
+      if (!response.ok) throw new Error(result.error || "agent");
+      if (mode === "quiz" && Array.isArray(result.quiz)) {
+        setGeneratedQuiz(result.quiz);
+      }
+      if (mode === "flashcards" && Array.isArray(result.flashcards)) {
+        setGeneratedFlashcards(result.flashcards);
+      }
+      setLearningLive(Boolean(result.live));
+    } catch {
+      if (mode === "quiz") setGeneratedQuiz([]);
+      if (mode === "flashcards") setGeneratedFlashcards([]);
+      setToast("Không thể tạo nội dung từ học liệu đang mở");
+    } finally {
+      setIsGeneratingLearning(false);
+    }
+  }
+
+  async function createQuiz() {
+    resetQuiz();
+    setGeneratedQuiz([]);
+    setAgentTab("quiz");
+    setRightOpen(true);
+    await requestLearningContent("quiz");
+  }
+
+  async function createFlashcards() {
     setFlippedCards([]);
+    setGeneratedFlashcards([]);
     setAgentTab("flashcards");
     setRightOpen(true);
+    await requestLearningContent("flashcards");
   }
 
   function resetQuiz() {
@@ -1401,7 +1365,21 @@ export default function Home() {
 
         {agentTab === "quiz" && (
           <div className="learning-pane">
-            {!quizComplete ? (
+            {isGeneratingLearning ? (
+              <div className="learning-loading">
+                <Sparkles size={20} />
+                <strong>Đang tạo quiz từ đúng transcript…</strong>
+                <span>{activeMaterial.transcriptLabel}</span>
+              </div>
+            ) : quiz.length === 0 ? (
+              <div className="learning-loading">
+                <CircleHelp size={20} />
+                <strong>Chưa có quiz cho phần này</strong>
+                <button className="primary-action" onClick={createQuiz}>
+                  Tạo lại từ học liệu
+                </button>
+              </div>
+            ) : !quizComplete ? (
               <>
                 <div className="learning-heading">
                   <div>
@@ -1409,7 +1387,7 @@ export default function Home() {
                     <h3>Kiểm tra hiểu thật</h3>
                   </div>
                   <span className="quiz-count">
-                    {quizIndex + 1}/{quiz.length}
+                    {quizIndex + 1}/{quiz.length} · {learningLive ? "Gemini" : "Theo nguồn"}
                   </span>
                 </div>
                 <div className="progress-track">
@@ -1449,6 +1427,9 @@ export default function Home() {
                             : "Chưa chính xác."}
                         </strong>
                         {quiz[quizIndex].explain}
+                        {quiz[quizIndex].citation && (
+                          <small>[{quiz[quizIndex].citation}]</small>
+                        )}
                       </p>
                     </div>
                   )}
@@ -1508,40 +1489,64 @@ export default function Home() {
 
         {agentTab === "flashcards" && (
           <div className="learning-pane">
-            <div className="learning-heading">
-              <div>
-                <span>FLASHCARD TỰ ĐỘNG</span>
-                <h3>Ôn lại điểm quan trọng</h3>
+            {isGeneratingLearning ? (
+              <div className="learning-loading">
+                <Sparkles size={20} />
+                <strong>Đang tạo thẻ từ đúng transcript…</strong>
+                <span>{activeMaterial.transcriptLabel}</span>
               </div>
-              <span className="quiz-count">{flashcards.length} thẻ</span>
-            </div>
-            <p className="flashcard-hint">
-              Chạm vào từng thẻ để lật. Nội dung được tạo từ chính phần bạn chọn.
-            </p>
-            <div className="flashcard-list">
-              {flashcards.map((card, index) => {
-                const flipped = flippedCards.includes(index);
-                return (
-                  <button
-                    key={`${card.front}-${index}`}
-                    className={`flashcard ${flipped ? "flipped" : ""}`}
-                    onClick={() => toggleCard(index)}
-                  >
-                    <span>{flipped ? "ĐÁP ÁN" : `THẺ ${index + 1}`}</span>
-                    <p>{flipped ? card.back : card.front}</p>
-                    <small>
-                      {flipped ? "Chạm để xem câu hỏi" : "Chạm để xem đáp án"}
-                    </small>
-                  </button>
-                );
-              })}
-            </div>
-            <button
-              className="primary-action"
-              onClick={() => setFlippedCards(flashcards.map((_, index) => index))}
-            >
-              <CheckCircle2 size={16} /> Lật tất cả thẻ
-            </button>
+            ) : flashcards.length === 0 ? (
+              <div className="learning-loading">
+                <Layers3 size={20} />
+                <strong>Chưa có thẻ nhớ cho phần này</strong>
+                <button className="primary-action" onClick={createFlashcards}>
+                  Tạo lại từ học liệu
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="learning-heading">
+                  <div>
+                    <span>FLASHCARD THEO NGỮ CẢNH</span>
+                    <h3>Ôn lại điểm quan trọng</h3>
+                  </div>
+                  <span className="quiz-count">
+                    {flashcards.length} thẻ · {learningLive ? "Gemini" : "Theo nguồn"}
+                  </span>
+                </div>
+                <p className="flashcard-hint">
+                  Chạm vào từng thẻ để lật. Nội dung chỉ dùng transcript của buổi đang mở.
+                </p>
+                <div className="flashcard-list">
+                  {flashcards.map((card, index) => {
+                    const flipped = flippedCards.includes(index);
+                    return (
+                      <button
+                        key={`${card.front}-${index}`}
+                        className={`flashcard ${flipped ? "flipped" : ""}`}
+                        onClick={() => toggleCard(index)}
+                      >
+                        <span>{flipped ? "ĐÁP ÁN" : `THẺ ${index + 1}`}</span>
+                        <p>{flipped ? card.back : card.front}</p>
+                        <small>
+                          {flipped && card.citation
+                            ? `[${card.citation}] · Chạm để xem câu hỏi`
+                            : "Chạm để xem đáp án"}
+                        </small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  className="primary-action"
+                  onClick={() =>
+                    setFlippedCards(flashcards.map((_, index) => index))
+                  }
+                >
+                  <CheckCircle2 size={16} /> Lật tất cả thẻ
+                </button>
+              </>
+            )}
           </div>
         )}
       </aside>
