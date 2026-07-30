@@ -86,6 +86,13 @@ type ChatMessage = {
   live?: boolean;
 };
 
+type HighlightEntry = {
+  id: string;
+  text: string;
+  pageIndex: number;
+  pdfTextItemIds: string[];
+};
+
 type QuizQuestion = {
   question: string;
   options: string[];
@@ -637,7 +644,7 @@ export default function Home() {
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [highlightMode, setHighlightMode] = useState(true);
-  const [highlights, setHighlights] = useState<string[]>([]);
+  const [highlightEntries, setHighlightEntries] = useState<HighlightEntry[]>([]);
   const [messages, setMessages] = useState(initialMessages);
   const [question, setQuestion] = useState("");
   const [agentTab, setAgentTab] = useState<AgentTab>("chat");
@@ -664,6 +671,17 @@ export default function Home() {
   const activeMaterial =
     materials.find((material) => material.id === activeMaterialId) ?? materials[0];
   const page = activeMaterial.pages[pageIndex] ?? activeMaterial.pages[0];
+  const highlights = useMemo(
+    () => highlightEntries.map((entry) => entry.text),
+    [highlightEntries],
+  );
+  const highlightedPdfTextItems = useMemo(
+    () =>
+      new Set(
+        highlightEntries.flatMap((entry) => entry.pdfTextItemIds),
+      ),
+    [highlightEntries],
+  );
   const quiz = useMemo(
     () => buildQuiz(highlights, page),
     [highlights, page],
@@ -690,7 +708,7 @@ export default function Home() {
   function selectMaterial(material: Material) {
     setActiveMaterialId(material.id);
     setPageIndex(0);
-    setHighlights([]);
+    setHighlightEntries([]);
     resetQuiz();
   }
 
@@ -711,33 +729,78 @@ export default function Home() {
     }
   }
 
-  function addHighlight(text: string, sourcePageIndex = pageIndex) {
+  function addHighlight(
+    text: string,
+    sourcePageIndex = pageIndex,
+    pdfTextItemIds: string[] = [],
+  ) {
     const normalized = cleanText(text);
     if (!normalized || normalized.length < 3) return;
+    const existingEntry = highlightEntries.find(
+      (entry) =>
+        entry.text === normalized && entry.pageIndex === sourcePageIndex,
+    );
     setPageIndex(sourcePageIndex);
-    setHighlights((current) =>
-      current.includes(normalized)
-        ? current.filter((item) => item !== normalized)
-        : [...current, normalized].slice(-6),
+    setHighlightEntries((current) =>
+      existingEntry
+        ? current.filter((entry) => entry.id !== existingEntry.id)
+        : [
+            ...current,
+            {
+              id: `highlight-${Date.now()}-${sourcePageIndex}`,
+              text: normalized,
+              pageIndex: sourcePageIndex,
+              pdfTextItemIds,
+            },
+          ].slice(-6),
     );
     setToast(
-      highlights.includes(normalized)
+      existingEntry
         ? "Đã bỏ đoạn bôi sáng"
-        : "Đã thêm vào ngữ cảnh AI",
+        : `Đã bôi sáng ${Math.max(1, pdfTextItemIds.length)} vùng văn bản`,
     );
+  }
+
+  function getSelectedPdfTextItemIds(
+    selection: Selection,
+    sourcePageIndex: number,
+  ) {
+    if (selection.rangeCount === 0) return [];
+    const range = selection.getRangeAt(0);
+    const pageElement = viewerRef.current?.querySelector<HTMLElement>(
+      `[data-page-index="${sourcePageIndex}"]`,
+    );
+    if (!pageElement) return [];
+
+    return Array.from(
+      pageElement.querySelectorAll<HTMLElement>("[data-pdf-text-id]"),
+    ).flatMap((element) => {
+      try {
+        return range.intersectsNode(element) && element.dataset.pdfTextId
+          ? [element.dataset.pdfTextId]
+          : [];
+      } catch {
+        return [];
+      }
+    });
   }
 
   function handleTextSelection(sourcePageIndex: number) {
     if (!highlightMode) return;
-    const selected = window.getSelection()?.toString() ?? "";
-    if (cleanText(selected).length >= 3) {
+    const selection = window.getSelection();
+    const selected = cleanText(selection?.toString() ?? "");
+    if (selection && selected.length >= 3) {
       selectionHandledRef.current = true;
-      addHighlight(selected, sourcePageIndex);
+      addHighlight(
+        selected,
+        sourcePageIndex,
+        getSelectedPdfTextItemIds(selection, sourcePageIndex),
+      );
       window.setTimeout(() => {
         selectionHandledRef.current = false;
       }, 0);
     }
-    window.getSelection()?.removeAllRanges();
+    selection?.removeAllRanges();
   }
 
   function handleViewerScroll() {
@@ -812,7 +875,7 @@ export default function Home() {
       setMaterials((current) => [material, ...current]);
       setActiveMaterialId(material.id);
       setPageIndex(0);
-      setHighlights([]);
+      setHighlightEntries([]);
       setUploadMessage(
         stored
           ? `Đã nhập ${pages.length} trang, giữ nguyên bố cục và lưu an toàn.`
@@ -865,7 +928,7 @@ export default function Home() {
     setPageIndex(0);
     setPasteValue("");
     setShowPaste(false);
-    setHighlights([]);
+    setHighlightEntries([]);
     setToast("Đã tạo tài liệu từ nội dung dán");
   }
 
@@ -989,9 +1052,17 @@ export default function Home() {
     if (!highlightMode) return;
     if (selectionHandledRef.current) return;
     const target = event.target as HTMLElement;
-    const text = target.closest<HTMLElement>("[data-highlightable]")?.innerText;
+    const highlightTarget =
+      target.closest<HTMLElement>("[data-highlightable]");
+    const text = highlightTarget?.textContent;
     if (text && !window.getSelection()?.toString()) {
-      addHighlight(text, sourcePageIndex);
+      addHighlight(
+        text,
+        sourcePageIndex,
+        highlightTarget?.dataset.pdfTextId
+          ? [highlightTarget.dataset.pdfTextId]
+          : [],
+      );
     }
   }
 
@@ -1236,7 +1307,7 @@ export default function Home() {
                     viewerPage.pdfSource && viewerPage.pdfPageNumber
                       ? "has-native-preview"
                       : ""
-                  }`}
+                  } ${highlightMode ? "highlight-mode" : "read-mode"}`}
                   style={{ aspectRatio: String(pageRatio) }}
                   key={viewerPage.id}
                   onMouseUp={() => handleTextSelection(viewerIndex)}
@@ -1259,25 +1330,31 @@ export default function Home() {
                         }`}
                       >
                         {viewerPage.textLayer?.map((textItem, textIndex) => (
-                          <span
-                            key={`${viewerPage.id}-pdf-text-${textIndex}`}
-                            data-highlightable
-                            className={
-                              highlights.includes(cleanText(textItem.text))
-                                ? "is-highlighted"
-                                : ""
-                            }
-                            style={{
-                              left: `${textItem.left}%`,
-                              top: `${textItem.top}%`,
-                              width: `${textItem.width}%`,
-                              height: `${textItem.height}%`,
-                              fontSize: `${textItem.fontSize}%`,
-                              transform: `rotate(${textItem.rotation}deg)`,
-                            }}
-                          >
-                            {textItem.text}
-                          </span>
+                          (() => {
+                            const pdfTextItemId = `${viewerPage.id}:${textIndex}`;
+                            return (
+                              <span
+                                key={`${viewerPage.id}-pdf-text-${textIndex}`}
+                                data-highlightable
+                                data-pdf-text-id={pdfTextItemId}
+                                className={
+                                  highlightedPdfTextItems.has(pdfTextItemId)
+                                    ? "is-highlighted"
+                                    : ""
+                                }
+                                style={{
+                                  left: `${textItem.left}%`,
+                                  top: `${textItem.top}%`,
+                                  width: `${textItem.width}%`,
+                                  height: `${textItem.height}%`,
+                                  fontSize: `${textItem.fontSize}%`,
+                                  transform: `rotate(${textItem.rotation}deg)`,
+                                }}
+                              >
+                                {textItem.text}
+                              </span>
+                            );
+                          })()
                         ))}
                       </div>
                       <div className="native-page-label">
@@ -1424,7 +1501,9 @@ export default function Home() {
                   <Highlighter size={14} /> Ngữ cảnh đã chọn
                 </span>
                 {highlights.length > 0 && (
-                  <button onClick={() => setHighlights([])}>Xoá tất cả</button>
+                  <button onClick={() => setHighlightEntries([])}>
+                    Xoá tất cả
+                  </button>
                 )}
               </div>
               {highlights.length === 0 ? (
@@ -1434,13 +1513,13 @@ export default function Home() {
                 </p>
               ) : (
                 <div className="highlight-list">
-                  {highlights.map((highlight, index) => (
-                    <div key={`${highlight}-${index}`}>
-                      <span>“{highlight}”</span>
+                  {highlightEntries.map((highlight) => (
+                    <div key={highlight.id}>
+                      <span>“{highlight.text}”</span>
                       <button
                         onClick={() =>
-                          setHighlights((current) =>
-                            current.filter((item) => item !== highlight),
+                          setHighlightEntries((current) =>
+                            current.filter((item) => item.id !== highlight.id),
                           )
                         }
                         aria-label="Bỏ đoạn bôi sáng"
