@@ -26,15 +26,12 @@ import {
   Pencil,
   Plus,
   RotateCcw,
-  Search,
   Send,
   Sparkles,
   StickyNote,
   Sun,
-  Trash2,
   Upload,
   X,
-  Zap,
   Eraser,
 } from "lucide-react";
 import JSZip from "jszip";
@@ -409,6 +406,7 @@ function AnnotationLayer({
   onAdd,
   onUpdate,
   onRemove,
+  onEraseHighlight,
 }: {
   annotations: PageAnnotation[];
   tool: ViewerTool;
@@ -418,6 +416,7 @@ function AnnotationLayer({
   ) => void;
   onUpdate: (id: string, text: string) => void;
   onRemove: (id: string) => void;
+  onEraseHighlight: (pdfTextItemId?: string, text?: string) => void;
 }) {
   const [draftPoints, setDraftPoints] = useState<AnnotationPoint[]>([]);
   const [circleStart, setCircleStart] = useState<AnnotationPoint | null>(null);
@@ -469,7 +468,22 @@ function AnnotationLayer({
     <div
       className={`annotation-layer tool-${tool}`}
       onPointerDown={(event) => {
-        if (tool === "pen") {
+        if (tool === "eraser") {
+          const highlightedText = document
+            .elementsFromPoint(event.clientX, event.clientY)
+            .find(
+              (element) =>
+                element instanceof HTMLElement &&
+                element.matches("[data-highlightable].is-highlighted"),
+            ) as HTMLElement | undefined;
+          if (highlightedText) {
+            event.preventDefault();
+            onEraseHighlight(
+              highlightedText.dataset.pdfTextId,
+              cleanText(highlightedText.textContent ?? ""),
+            );
+          }
+        } else if (tool === "pen") {
           event.currentTarget.setPointerCapture(event.pointerId);
           setDraftPoints([pointFromEvent(event)]);
         } else if (tool === "circle") {
@@ -575,11 +589,15 @@ function AnnotationLayer({
                 width: `${annotation.width ?? 26}%`,
                 minHeight: `${annotation.height ?? 20}%`,
               }}
-              onPointerDown={(event) => event.stopPropagation()}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                if (tool === "eraser") onRemove(annotation.id);
+              }}
             >
               <textarea
                 value={annotation.text ?? ""}
                 onChange={(event) => onUpdate(annotation.id, event.target.value)}
+                readOnly={tool === "eraser"}
                 placeholder={language === "vi" ? "Ghi chú…" : "Note…"}
                 aria-label={
                   language === "vi" ? "Nội dung ghi chú" : "Note content"
@@ -1280,18 +1298,24 @@ export default function Home() {
     setToast(language === "vi" ? "Đã xóa ghi chú" : "Annotation removed");
   }
 
-  function clearPageAnnotations() {
-    setAnnotations((current) =>
+  function eraseHighlight(
+    sourcePageIndex: number,
+    pdfTextItemId?: string,
+    text?: string,
+  ) {
+    setHighlightEntries((current) =>
       current.filter(
-        (annotation) =>
-          annotation.materialId !== activeMaterial.id ||
-          annotation.pageIndex !== pageIndex,
+        (entry) =>
+          entry.pageIndex !== sourcePageIndex ||
+          !(
+            (pdfTextItemId &&
+              entry.pdfTextItemIds.includes(pdfTextItemId)) ||
+            (text && entry.text === text)
+          ),
       ),
     );
     setToast(
-      language === "vi"
-        ? `Đã xóa ghi chú trang ${pageIndex + 1}`
-        : `Cleared annotations on page ${pageIndex + 1}`,
+      language === "vi" ? "Đã xóa phần bôi sáng" : "Highlight removed",
     );
   }
 
@@ -1366,6 +1390,9 @@ export default function Home() {
   ) {
     if (selection.rangeCount === 0) return [];
     const range = selection.getRangeAt(0);
+    const selectionRects = Array.from(range.getClientRects()).filter(
+      (rect) => rect.width > 0 && rect.height > 0,
+    );
     const pageElement = viewerRef.current?.querySelector<HTMLElement>(
       `[data-page-index="${sourcePageIndex}"]`,
     );
@@ -1375,9 +1402,23 @@ export default function Home() {
       pageElement.querySelectorAll<HTMLElement>("[data-pdf-text-id]"),
     ).flatMap((element) => {
       try {
-        return range.intersectsNode(element) && element.dataset.pdfTextId
-          ? [element.dataset.pdfTextId]
-          : [];
+        if (!range.intersectsNode(element) || !element.dataset.pdfTextId) {
+          return [];
+        }
+        if (selectionRects.length === 0) return [element.dataset.pdfTextId];
+        const elementRects = Array.from(element.getClientRects());
+        const overlapsSelection = elementRects.some((elementRect) =>
+          selectionRects.some(
+            (selectionRect) =>
+              Math.min(elementRect.right, selectionRect.right) -
+                Math.max(elementRect.left, selectionRect.left) >
+                0.5 &&
+              Math.min(elementRect.bottom, selectionRect.bottom) -
+                Math.max(elementRect.top, selectionRect.top) >
+                0.5,
+          ),
+        );
+        return overlapsSelection ? [element.dataset.pdfTextId] : [];
       } catch {
         return [];
       }
@@ -1387,13 +1428,30 @@ export default function Home() {
   function handleTextSelection(sourcePageIndex: number) {
     if (!highlightMode) return;
     const selection = window.getSelection();
-    const selected = cleanText(selection?.toString() ?? "");
-    if (selection && selected.length >= 3) {
+    const rawSelectedText = cleanText(selection?.toString() ?? "");
+    if (selection && rawSelectedText.length >= 3) {
+      const pdfTextItemIds = getSelectedPdfTextItemIds(
+        selection,
+        sourcePageIndex,
+      );
+      const selectedPdfTextItemIds = new Set(pdfTextItemIds);
+      const selectedPdfText = cleanText(
+        Array.from(
+          viewerRef.current?.querySelectorAll<HTMLElement>(
+            `[data-page-index="${sourcePageIndex}"] [data-pdf-text-id]`,
+          ) ?? [],
+        )
+          .filter((element) =>
+            selectedPdfTextItemIds.has(element.dataset.pdfTextId ?? ""),
+          )
+          .map((element) => element.textContent ?? "")
+          .join(" "),
+      );
       selectionHandledRef.current = true;
       addHighlight(
-        selected,
+        selectedPdfText || rawSelectedText,
         sourcePageIndex,
-        getSelectedPdfTextItemIds(selection, sourcePageIndex),
+        pdfTextItemIds,
       );
       window.setTimeout(() => {
         selectionHandledRef.current = false;
@@ -1832,13 +1890,40 @@ export default function Home() {
           return Math.abs(center - targetCenter) <= tolerance;
         })
         .sort((left, right) => left.offsetLeft - right.offsetLeft);
+      const targetIndex = lineItems.indexOf(highlightTarget);
+      let startIndex = targetIndex;
+      let endIndex = targetIndex;
+      const isConnected = (left: HTMLElement, right: HTMLElement) => {
+        const gap =
+          right.offsetLeft - (left.offsetLeft + left.offsetWidth);
+        return gap <= Math.max(12, Math.min(left.offsetHeight, right.offsetHeight) * 1.6);
+      };
+      while (
+        startIndex > 0 &&
+        isConnected(lineItems[startIndex - 1], lineItems[startIndex])
+      ) {
+        startIndex -= 1;
+      }
+      while (
+        endIndex >= 0 &&
+        endIndex < lineItems.length - 1 &&
+        isConnected(lineItems[endIndex], lineItems[endIndex + 1])
+      ) {
+        endIndex += 1;
+      }
+      const connectedLineItems =
+        targetIndex >= 0
+          ? lineItems.slice(startIndex, endIndex + 1)
+          : [highlightTarget];
       const lineText = cleanText(
-        lineItems.map((element) => element.textContent ?? "").join(" "),
+        connectedLineItems
+          .map((element) => element.textContent ?? "")
+          .join(" "),
       );
       addHighlight(
         lineText,
         sourcePageIndex,
-        lineItems.flatMap((element) =>
+        connectedLineItems.flatMap((element) =>
           element.dataset.pdfTextId ? [element.dataset.pdfTextId] : [],
         ),
       );
@@ -1883,19 +1968,6 @@ export default function Home() {
           >
             <Menu size={19} />
           </button>
-          <button
-            className="search-button"
-            onClick={() => setLeftOpen(true)}
-            aria-label="Tìm học liệu"
-          >
-            <Search size={17} />
-            <span>Tìm học liệu</span>
-            <kbd>⌘ K</kbd>
-          </button>
-          <div className="streak">
-            <Zap size={15} fill="currentColor" />
-            <span>7 ngày</span>
-          </div>
           <button
             className="language-button"
             onClick={() =>
@@ -2142,22 +2214,6 @@ export default function Home() {
                     <Eraser size={16} />
                     <span>{language === "vi" ? "Tẩy" : "Erase"}</span>
                   </button>
-                  {viewerTool === "eraser" && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="danger"
-                      onClick={() => {
-                        clearPageAnnotations();
-                        setShowMoreTools(false);
-                      }}
-                    >
-                      <Trash2 size={16} />
-                      <span>
-                        {language === "vi" ? "Xóa cả trang" : "Clear page"}
-                      </span>
-                    </button>
-                  )}
                 </div>
               )}
             </div>
@@ -2381,6 +2437,9 @@ export default function Home() {
                     }
                     onUpdate={updateAnnotation}
                     onRemove={removeAnnotation}
+                    onEraseHighlight={(pdfTextItemId, text) =>
+                      eraseHighlight(viewerIndex, pdfTextItemId, text)
+                    }
                   />
                 </article>
               );
