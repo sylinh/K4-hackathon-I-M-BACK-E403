@@ -779,46 +779,132 @@ function schemaForMode(mode: AgentMode) {
   };
 }
 
+type GeminiRuntimeEnv = {
+  GEMINI_API_KEY?: string;
+  GEMINI_API_KEY_1?: string;
+  GEMINI_API_KEY_2?: string;
+  GEMINI_API_KEY_3?: string;
+  GEMINI_MODEL?: string;
+};
+
+const geminiKeyCooldowns = new Map<number, number>();
+let activeGeminiKeyIndex = 0;
+
+function geminiApiKeys(runtimeEnv: GeminiRuntimeEnv) {
+  return Array.from(
+    new Set(
+      [
+        runtimeEnv.GEMINI_API_KEY_1,
+        runtimeEnv.GEMINI_API_KEY_2,
+        runtimeEnv.GEMINI_API_KEY_3,
+        runtimeEnv.GEMINI_API_KEY,
+      ]
+        .map((key) => key?.trim())
+        .filter((key): key is string => Boolean(key)),
+    ),
+  );
+}
+
+function retryDelayMs(response: Response) {
+  const retryAfter = response.headers.get("retry-after");
+  if (!retryAfter) return 60_000;
+  const seconds = Number(retryAfter);
+  if (Number.isFinite(seconds)) {
+    return Math.max(1_000, Math.min(300_000, seconds * 1_000));
+  }
+  const retryAt = Date.parse(retryAfter);
+  return Number.isFinite(retryAt)
+    ? Math.max(1_000, Math.min(300_000, retryAt - Date.now()))
+    : 60_000;
+}
+
+function availableGeminiKeyIndexes(keyCount: number) {
+  const now = Date.now();
+  return Array.from({ length: keyCount }, (_, offset) => {
+    return (activeGeminiKeyIndex + offset) % keyCount;
+  }).filter((index) => (geminiKeyCooldowns.get(index) ?? 0) <= now);
+}
+
+function moveToNextGeminiKey(keyIndex: number, keyCount: number) {
+  activeGeminiKeyIndex = (keyIndex + 1) % keyCount;
+}
+
 async function callGemini(prompt: string, mode: AgentMode) {
-  const runtimeEnv = env as unknown as {
-    GEMINI_API_KEY?: string;
-    GEMINI_MODEL?: string;
-  };
-  if (!runtimeEnv.GEMINI_API_KEY) return null;
+  const runtimeEnv = env as unknown as GeminiRuntimeEnv;
+  const apiKeys = geminiApiKeys(runtimeEnv);
+  if (apiKeys.length === 0) return null;
 
   const model = runtimeEnv.GEMINI_MODEL || "gemini-3.6-flash";
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-      {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          "x-goog-api-key": runtimeEnv.GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          contents: [{ role: "user", parts: [{ text: prompt }] }],
-          generationConfig: {
-            responseMimeType: "application/json",
-            responseJsonSchema: schemaForMode(mode),
-            maxOutputTokens: 3200,
-            thinkingConfig: {
-              thinkingLevel: "minimal",
-            },
+  const keyIndexes = availableGeminiKeyIndexes(apiKeys.length);
+  for (const keyIndex of keyIndexes) {
+    let response: Response;
+    try {
+      response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            "x-goog-api-key": apiKeys[keyIndex],
           },
-        }),
-      },
-    );
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+              responseMimeType: "application/json",
+              responseJsonSchema: schemaForMode(mode),
+              maxOutputTokens: 3200,
+              thinkingConfig: {
+                thinkingLevel: "minimal",
+              },
+            },
+          }),
+        },
+      );
+    } catch {
+      geminiKeyCooldowns.set(keyIndex, Date.now() + 5_000);
+      moveToNextGeminiKey(keyIndex, apiKeys.length);
+      console.warn(`Gemini project ${keyIndex + 1} is temporarily unreachable`);
+      continue;
+    }
+
     if (!response.ok) {
+      const shouldFailOver =
+        response.status === 408 ||
+        response.status === 429 ||
+        response.status === 401 ||
+        response.status === 403 ||
+        response.status >= 500;
+      if (!shouldFailOver) {
+        console.warn(
+          `Gemini request rejected by project ${keyIndex + 1}`,
+          response.status,
+        );
+        return null;
+      }
+
+      const cooldown =
+        response.status === 401 || response.status === 403
+          ? 300_000
+          : response.status === 429
+            ? retryDelayMs(response)
+            : 10_000;
+      geminiKeyCooldowns.set(keyIndex, Date.now() + cooldown);
+      moveToNextGeminiKey(keyIndex, apiKeys.length);
       console.warn(
-        "Gemini request failed",
+        `Gemini project ${keyIndex + 1} unavailable; trying the next project`,
         response.status,
-        compact(await response.text(), 240),
       );
       continue;
     }
+
     const parsed = parseJsonResponse(extractGeminiText(await response.json()));
-    if (parsed) return parsed;
+    if (parsed) {
+      activeGeminiKeyIndex = keyIndex;
+      geminiKeyCooldowns.delete(keyIndex);
+      return parsed;
+    }
+    console.warn(`Gemini project ${keyIndex + 1} returned an invalid response`);
+    return null;
   }
   return null;
 }

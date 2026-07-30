@@ -127,6 +127,11 @@ test("includes production assets and API routes", async () => {
   );
   assert.match(agentRoute, /generativelanguage\.googleapis\.com/);
   assert.match(agentRoute, /gemini-3\.6-flash/);
+  assert.match(agentRoute, /GEMINI_API_KEY_1/);
+  assert.match(agentRoute, /GEMINI_API_KEY_2/);
+  assert.match(agentRoute, /GEMINI_API_KEY_3/);
+  assert.match(agentRoute, /geminiKeyCooldowns/);
+  assert.match(agentRoute, /moveToNextGeminiKey/);
   assert.match(agentRoute, /transcript-04-clean\.md\?raw/);
   assert.match(agentRoute, /transcript-01-clean\.md\?raw/);
   assert.match(agentRoute, /retrieveChunks/);
