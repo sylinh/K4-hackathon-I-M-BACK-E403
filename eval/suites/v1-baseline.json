@@ -1,5 +1,7 @@
 {
   "suite": "vlearn-paired-materials-v1",
+  "version": "v1-baseline",
+  "stage": "01-baseline",
   "description": "Golden set cho hai gói học liệu: Day 1 PDF + Transcript 04 và Day 2 PDF + Transcript 01.",
   "qualityBar": {
     "minimumPassRate": 0.8,

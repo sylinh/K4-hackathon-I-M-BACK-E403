@@ -11,6 +11,7 @@
     "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
     "eval": "node tests/eval-suite.mjs",
+    "eval:v1": "node tests/eval-suite.mjs --version v1-baseline",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

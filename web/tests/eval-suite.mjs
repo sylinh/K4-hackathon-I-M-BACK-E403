@@ -3,11 +3,33 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const suitePath = resolve(here, "../../eval/cases.json");
-const resultsDir = resolve(here, "../../eval/results");
+const evalDir = resolve(here, "../../eval");
+const versionArgIndex = process.argv.findIndex((arg) => arg === "--version");
+const inlineVersionArg = process.argv.find((arg) =>
+  arg.startsWith("--version="),
+);
+const suiteVersion =
+  (versionArgIndex >= 0 ? process.argv[versionArgIndex + 1] : undefined) ||
+  inlineVersionArg?.slice("--version=".length) ||
+  process.env.EVAL_VERSION ||
+  "v1-baseline";
+
+if (!/^[a-z0-9][a-z0-9-]*$/.test(suiteVersion)) {
+  throw new Error(`Eval version khong hop le: ${suiteVersion}`);
+}
+
+const suitePath = resolve(evalDir, "suites", `${suiteVersion}.json`);
+const resultsDir = resolve(evalDir, "results");
+const versionResultsDir = resolve(resultsDir, suiteVersion);
 const baseUrl = process.env.EVAL_BASE_URL || "http://localhost:3000";
 const delayMs = Number(process.env.EVAL_DELAY_MS || 900);
 const suite = JSON.parse(await readFile(suitePath, "utf8"));
+
+if (suite.version !== suiteVersion) {
+  throw new Error(
+    `Suite version ${suite.version ?? "missing"} khong khop ${suiteVersion}.`,
+  );
+}
 
 function normalize(value) {
   return String(value ?? "")
@@ -263,9 +285,15 @@ const outOfScopePassRate =
     ? outOfScopePassed / outOfScopeCases.length
     : 0;
 
+const generatedAt = new Date().toISOString();
+const runId = generatedAt.replace(/[:.]/g, "-");
 const report = {
   suite: suite.suite,
-  generatedAt: new Date().toISOString(),
+  version: suite.version,
+  stage: suite.stage,
+  runId,
+  generatedAt,
+  suiteFile: `eval/suites/${suiteVersion}.json`,
   baseUrl,
   qualityBar: suite.qualityBar,
   summary: {
@@ -285,10 +313,32 @@ const report = {
   results,
 };
 
-await mkdir(resultsDir, { recursive: true });
+const reportFileName = `${runId}.json`;
+const reportRelativePath = `${suiteVersion}/${reportFileName}`;
+const reportPath = resolve(versionResultsDir, reportFileName);
+const pointer = {
+  version: suiteVersion,
+  stage: suite.stage,
+  runId,
+  generatedAt,
+  report: reportRelativePath,
+  summary: report.summary,
+};
+
+await mkdir(versionResultsDir, { recursive: true });
+await writeFile(
+  reportPath,
+  `${JSON.stringify(report, null, 2)}\n`,
+  { encoding: "utf8", flag: "wx" },
+);
+await writeFile(
+  resolve(versionResultsDir, "latest.json"),
+  `${JSON.stringify({ ...pointer, report: reportFileName }, null, 2)}\n`,
+  "utf8",
+);
 await writeFile(
   resolve(resultsDir, "latest.json"),
-  `${JSON.stringify(report, null, 2)}\n`,
+  `${JSON.stringify(pointer, null, 2)}\n`,
   "utf8",
 );
 
@@ -305,3 +355,4 @@ console.log(`Gemini live responses: ${liveResponses}/${results.length}`);
 console.log(
   `Quality bar: ${report.summary.qualityBarPassed ? "PASSED" : "NOT MET"}`,
 );
+console.log(`Saved immutable report: eval/results/${reportRelativePath}`);

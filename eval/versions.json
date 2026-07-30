@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "currentVersion": "v1-baseline",
+  "stages": [
+    {
+      "stage": 1,
+      "version": "v1-baseline",
+      "status": "completed",
+      "objective": "Đo baseline cho chat, quiz và flashcard trên đúng hai cặp PDF/transcript.",
+      "suite": "suites/v1-baseline.json",
+      "baselineReport": "results/v1-baseline/2026-07-30T14-32-20-632Z.json",
+      "exitCriteria": "Có báo cáo đầy đủ để xác định lỗi nguồn, phạm vi và schema."
+    },
+    {
+      "stage": 2,
+      "version": "v2-scope-guard",
+      "status": "planned",
+      "objective": "Agent phải hỏi lại câu mơ hồ và từ chối câu ngoài phạm vi hoặc sai nguồn.",
+      "exitCriteria": "Source isolation và out-of-scope đều đạt 100%."
+    },
+    {
+      "stage": 3,
+      "version": "v3-grounding-quality",
+      "status": "planned",
+      "objective": "Nâng độ đúng nội dung, citation và retrieval cho từng ngày học.",
+      "exitCriteria": "Tổng pass rate đạt ít nhất 80% với response Gemini thật."
+    },
+    {
+      "stage": 4,
+      "version": "v4-release-gate",
+      "status": "planned",
+      "objective": "Chạy lặp lại bộ regression trước demo và xác nhận kết quả ổn định.",
+      "exitCriteria": "Ba lần chạy liên tiếp đạt toàn bộ quality bar."
+    }
+  ]
+}

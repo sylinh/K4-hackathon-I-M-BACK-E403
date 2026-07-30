@@ -1,19 +1,27 @@
-# VLearn paired-material eval suite
+# VLearn eval theo phiên bản
 
-Suite này kiểm thử đúng hai gói học liệu được dùng trong demo:
+Bộ eval kiểm thử hai gói học liệu:
 
 - `day-1-foundation`: `d1-slide-hackathon.pdf` + Transcript 04 (`T04-*`);
 - `day-2-product`: `d2-slide-hackathon.pdf` + Transcript 01 (`T01-*`).
 
+## Ba loại phiên bản
+
+1. **Giai đoạn** nằm trong `versions.json`, mô tả mục tiêu và trạng thái công việc.
+2. **Suite version** nằm trong `suites/<version>.json`, là bộ input và expected output đã đóng băng.
+3. **Run version** nằm trong `results/<version>/<timestamp>.json`, là output thực tế của một lần chạy và không bị ghi đè.
+
+`results/latest.json` chỉ là con trỏ tới báo cáo mới nhất. Báo cáo đầy đủ luôn nằm trong thư mục của version tương ứng.
+
 ## Một test case gồm gì?
 
 - `input`: payload thực tế gửi đến `POST /api/agent`;
-- `expected`: các điều kiện output phải đạt, không phải câu trả lời mẫu nguyên văn;
+- `expected`: điều kiện output phải đạt, không phải câu trả lời mẫu nguyên văn;
 - `actualOutput`: output agent trả về khi chạy;
 - `checks`: kết quả từng phép kiểm;
 - `passed`: chỉ `true` khi mọi phép kiểm của case đều đạt.
 
-## Chạy suite
+## Chạy một version
 
 Khởi động ứng dụng ở terminal thứ nhất:
 
@@ -22,33 +30,44 @@ cd web
 npm run dev
 ```
 
-Chạy eval ở terminal thứ hai:
+Chạy version mặc định `v1-baseline` ở terminal thứ hai:
 
 ```powershell
 cd web
 npm run eval
 ```
 
-Đổi URL hoặc khoảng nghỉ giữa các request:
+Chỉ định version:
+
+```powershell
+npm run eval -- --version v1-baseline
+```
+
+Có thể đổi URL và khoảng nghỉ:
 
 ```powershell
 $env:EVAL_BASE_URL="http://localhost:3000"
 $env:EVAL_DELAY_MS="1200"
-npm run eval
+npm run eval -- --version v1-baseline
 ```
 
-Báo cáo đầy đủ được ghi vào `eval/results/latest.json`.
+Mỗi lần chạy tạo một file timestamp mới. Runner không ghi đè báo cáo cũ.
 
-## Quality bar
+## Tạo version tiếp theo
+
+1. Sao chép suite gần nhất sang `suites/v2-<mục-tiêu>.json`.
+2. Đổi `version`, `stage` và chỉ bổ sung case liên quan tới mục tiêu giai đoạn.
+3. Thêm version vào `versions.json` với trạng thái `active`.
+4. Chạy suite và lưu kết luận vào `CHANGELOG.md`.
+5. Chỉ chuyển trạng thái thành `completed` khi đạt exit criteria.
+
+Không sửa suite hoặc quality bar sau khi đã xem kết quả. Khi tiêu chí thay đổi, tạo version mới.
+
+## Quality bar hiện tại
 
 - tổng tỷ lệ PASS tối thiểu 80%;
 - không trộn Day 1/Day 2: 100%;
-- case ngoài phạm vi phải xử lý đúng: 100%.
+- case ngoài phạm vi phải xử lý đúng: 100%;
 - toàn bộ lượt chạy phải có ít nhất một response `live: true`.
 
-Suite ghi nhận `live` cho từng case và tổng số response Gemini thật. Một case
-không bị đánh rớt riêng chỉ vì API chuyển sang fallback khi chạm rate limit,
-nhưng cả lượt eval không đạt quality bar nếu không có lời gọi Gemini thật nào.
-
-Kết quả thấp vẫn phải được giữ nguyên trong repo. Không đổi quality bar sau khi
-đã xem kết quả.
+Fallback không làm rớt riêng một case chỉ vì `live: false`, nhưng toàn bộ lượt eval không đạt quality bar nếu không có lời gọi Gemini thật.
