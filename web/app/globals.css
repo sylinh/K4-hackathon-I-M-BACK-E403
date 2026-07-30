@@ -2552,9 +2552,14 @@ input:focus-visible {
   display: none;
 }
 
-/* Larger reading type for the assistant's source and selected-context controls. */
+/* Keep source labels consistent with the chat typeface rather than all-caps UI labels. */
+.source-scope-heading > span,
 .context-heading > span {
-  font-size: 13px;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: none;
 }
 
 .context-heading button {
