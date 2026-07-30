@@ -76,7 +76,12 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /vlearn-language/);
   assert.match(page, /compact-source-scope/);
   assert.match(page, /selectedLearningFocus/);
+  assert.match(page, /citationPageNumber/);
+  assert.match(page, /goToCitation/);
+  assert.match(page, /Trang \$\{pageNumber\}/);
   assert.match(styles, /\.answer-evidence/);
+  assert.match(styles, /\.evidence-citation/);
+  assert.match(styles, /\.citation-list/);
   assert.match(styles, /\.message-bubble p/);
   assert.match(styles, /font-size: 15px/);
   assert.match(styles, /\.annotation-layer/);

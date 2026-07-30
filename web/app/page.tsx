@@ -96,6 +96,7 @@ type ChatMessage = {
   role: "assistant" | "user";
   text: string;
   citation?: string;
+  citations?: string[];
   evidence?: Array<{ claim: string; citation: string }>;
   confidence?: "Được nêu trực tiếp" | "Được suy ra" | "Không đủ thông tin";
   note?: string;
@@ -1787,8 +1788,30 @@ export default function Home() {
         ? `Slide đang xem • Trang ${pageIndex + 1}`
         : `Current slide • Page ${pageIndex + 1}`
       : language === "vi"
-        ? `Toàn bộ tài liệu • ${activeMaterial.pages.length} trang`
-        : `Full document • ${activeMaterial.pages.length} pages`;
+      ? `Toàn bộ tài liệu • ${activeMaterial.pages.length} trang`
+      : `Full document • ${activeMaterial.pages.length} pages`;
+
+  function citationPageNumber(citation: string) {
+    const match = citation.match(/\bP(\d{3})\b/i);
+    const pageNumber = match ? Number(match[1]) : 0;
+    return pageNumber >= 1 && pageNumber <= activeMaterial.pages.length
+      ? pageNumber
+      : null;
+  }
+
+  function citationLabel(citation: string) {
+    const pageNumber = citationPageNumber(citation);
+    return pageNumber
+      ? language === "vi"
+        ? `Trang ${pageNumber} · P${String(pageNumber).padStart(3, "0")}`
+        : `Page ${pageNumber} · P${String(pageNumber).padStart(3, "0")}`
+      : citation;
+  }
+
+  function goToCitation(citation: string) {
+    const pageNumber = citationPageNumber(citation);
+    if (pageNumber) goToPage(pageNumber - 1);
+  }
 
   async function sendQuestion(event?: FormEvent, promptOverride?: string) {
     event?.preventDefault();
@@ -1844,12 +1867,7 @@ export default function Home() {
           evidence: result.evidence,
           confidence: result.confidence,
           note: result.note,
-          citation:
-            result.citations && result.citations.length > 0
-              ? `${activeMaterial.name} • ${result.citations
-                  .map((id) => `[${id}]`)
-                  .join(" ")}`
-              : undefined,
+          citations: result.citations,
           live: result.live,
         },
       ]);
@@ -2789,9 +2807,15 @@ export default function Home() {
                       <div className="answer-evidence">
                         <strong>{language === "vi" ? "Căn cứ" : "Evidence"}</strong>
                         {message.evidence.map((item, evidenceIndex) => (
-                          <p key={`${message.id}-evidence-${evidenceIndex}`}>
-                            {item.claim} — [{item.citation}]
-                          </p>
+                          <button
+                            type="button"
+                            className="evidence-citation"
+                            key={`${message.id}-evidence-${evidenceIndex}`}
+                            onClick={() => goToCitation(item.citation)}
+                            title={citationLabel(item.citation)}
+                          >
+                            {item.claim} — <span>{citationLabel(item.citation)}</span>
+                          </button>
                         ))}
                       </div>
                     )}
@@ -2807,16 +2831,34 @@ export default function Home() {
                         {message.note}
                       </p>
                     )}
-                    {message.citation && (
+                    {message.citations && message.citations.length > 0 ? (
+                      <div className="citation-list" aria-label="Trích dẫn nguồn">
+                        {message.citations.map((citation) => (
+                          <button
+                            type="button"
+                            className="citation"
+                            key={`${message.id}-${citation}`}
+                            onClick={() => goToCitation(citation)}
+                            title={citationLabel(citation)}
+                          >
+                            <FileText size={12} />
+                            {citationLabel(citation)}
+                            {message.live && <span>AI live</span>}
+                          </button>
+                        ))}
+                      </div>
+                    ) : message.citation ? (
                       <button
+                        type="button"
                         className="citation"
-                        onClick={() => goToPage(pageIndex)}
+                        onClick={() => goToCitation(message.citation!)}
+                        disabled={!citationPageNumber(message.citation)}
                       >
                         <FileText size={12} />
-                        {message.citation}
+                        {citationLabel(message.citation)}
                         {message.live && <span>AI live</span>}
                       </button>
-                    )}
+                    ) : null}
                   </div>
                 </div>
               ))}

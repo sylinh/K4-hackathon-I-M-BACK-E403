@@ -1535,7 +1535,7 @@ input:focus-visible {
 }
 
 .compact-source-scope .source-scope-options strong {
-  font-size: 8px;
+  font-size: 12px;
 }
 
 .source-scope-heading {
@@ -1548,7 +1548,7 @@ input:focus-visible {
 
 .source-scope-heading > span {
   color: var(--ink);
-  font-size: 9px;
+  font-size: 13px;
   font-weight: 800;
   text-transform: uppercase;
 }
@@ -1611,7 +1611,7 @@ input:focus-visible {
 }
 
 .source-scope-options strong {
-  font-size: 9px;
+  font-size: 12px;
 }
 
 .source-scope-options small {
@@ -1779,7 +1779,7 @@ input:focus-visible {
 .message-bubble .answer-level,
 .message-bubble .answer-note {
   color: var(--muted);
-  font-size: 9px;
+  font-size: 13px;
 }
 
 .message-bubble .answer-level,
@@ -1816,6 +1816,46 @@ input:focus-visible {
   background: #d9f5ea;
   color: #157b62;
   text-transform: uppercase;
+}
+
+.citation-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.citation-list .citation {
+  margin-top: 0;
+}
+
+.citation:disabled {
+  cursor: default;
+  opacity: 0.72;
+}
+
+.evidence-citation {
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+}
+
+.evidence-citation:hover span,
+.evidence-citation:focus-visible span {
+  color: var(--blue);
+  text-decoration: underline;
+}
+
+.evidence-citation span {
+  color: var(--blue-deep);
+  font-weight: 700;
 }
 
 .typing {
@@ -2510,6 +2550,21 @@ input:focus-visible {
 
 .mobile-only {
   display: none;
+}
+
+/* Larger reading type for the assistant's source and selected-context controls. */
+.context-heading > span {
+  font-size: 13px;
+}
+
+.context-heading button {
+  font-size: 11px;
+}
+
+.context-card > p,
+.highlight-list > div {
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 @media (max-width: 1180px) {
