@@ -101,7 +101,9 @@ function retrieveChunks(
     .sort((a, b) => b.score - a.score || a.index - b.index);
 
   const selected = ranked.filter((item) => item.score > 0).slice(0, limit);
-  if (selected.length >= 3) return selected.map((item) => item.chunk);
+  if (selected.length >= Math.min(5, limit)) {
+    return selected.map((item) => item.chunk);
+  }
   return ranked.slice(0, Math.min(limit, chunks.length)).map((item) => item.chunk);
 }
 
@@ -230,7 +232,84 @@ Trả về JSON thuần:
 {"answer":"Câu trả lời tiếng Việt ngắn gọn, dễ hiểu, có mã [Txx-xxx] ngay sau ý tương ứng.","citations":["Txx-xxx"]}`;
 }
 
-async function callGemini(prompt: string) {
+function schemaForMode(mode: AgentMode) {
+  const citation = {
+    type: "string",
+    description: "Mã đoạn nguồn dạng Txx-xxx có trong prompt.",
+  };
+  if (mode === "quiz") {
+    return {
+      type: "object",
+      properties: {
+        quiz: {
+          type: "array",
+          minItems: 3,
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              question: { type: "string" },
+              options: {
+                type: "array",
+                minItems: 4,
+                maxItems: 4,
+                items: { type: "string" },
+              },
+              answer: { type: "integer", minimum: 0, maximum: 3 },
+              explain: { type: "string" },
+              citation,
+            },
+            required: [
+              "question",
+              "options",
+              "answer",
+              "explain",
+              "citation",
+            ],
+          },
+        },
+      },
+      required: ["quiz"],
+    };
+  }
+  if (mode === "flashcards") {
+    return {
+      type: "object",
+      properties: {
+        flashcards: {
+          type: "array",
+          minItems: 5,
+          maxItems: 5,
+          items: {
+            type: "object",
+            properties: {
+              front: { type: "string" },
+              back: { type: "string" },
+              citation,
+            },
+            required: ["front", "back", "citation"],
+          },
+        },
+      },
+      required: ["flashcards"],
+    };
+  }
+  return {
+    type: "object",
+    properties: {
+      answer: { type: "string" },
+      citations: {
+        type: "array",
+        minItems: 1,
+        maxItems: 7,
+        items: citation,
+      },
+    },
+    required: ["answer", "citations"],
+  };
+}
+
+async function callGemini(prompt: string, mode: AgentMode) {
   const runtimeEnv = env as unknown as {
     GEMINI_API_KEY?: string;
     GEMINI_MODEL?: string;
@@ -238,25 +317,33 @@ async function callGemini(prompt: string) {
   if (!runtimeEnv.GEMINI_API_KEY) return null;
 
   const model = runtimeEnv.GEMINI_MODEL || "gemini-3.6-flash";
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-goog-api-key": runtimeEnv.GEMINI_API_KEY,
-      },
-      body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          maxOutputTokens: 1800,
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-goog-api-key": runtimeEnv.GEMINI_API_KEY,
         },
-      }),
-    },
-  );
-  if (!response.ok) return null;
-  return parseJsonResponse(extractGeminiText(await response.json()));
+        body: JSON.stringify({
+          contents: [{ role: "user", parts: [{ text: prompt }] }],
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseJsonSchema: schemaForMode(mode),
+            maxOutputTokens: 3200,
+            thinkingConfig: {
+              thinkingLevel: "minimal",
+            },
+          },
+        }),
+      },
+    );
+    if (!response.ok) continue;
+    const parsed = parseJsonResponse(extractGeminiText(await response.json()));
+    if (parsed) return parsed;
+  }
+  return null;
 }
 
 function isMaterialId(value: string): value is keyof typeof transcriptByMaterial {
@@ -288,16 +375,19 @@ export async function POST(request: Request) {
       context,
       sourceBlock(chunks),
     );
-    const liveResult = await callGemini(prompt);
+    const liveResult = await callGemini(prompt, mode);
 
     if (mode === "quiz") {
-      const quiz = Array.isArray(liveResult?.quiz)
+      const quiz =
+        Array.isArray(liveResult?.quiz) && liveResult.quiz.length === 3
         ? liveResult.quiz.slice(0, 3)
         : fallbackQuiz(chunks);
       return Response.json({ quiz, live: Boolean(liveResult) });
     }
     if (mode === "flashcards") {
-      const flashcards = Array.isArray(liveResult?.flashcards)
+      const flashcards =
+        Array.isArray(liveResult?.flashcards) &&
+        liveResult.flashcards.length === 5
         ? liveResult.flashcards.slice(0, 5)
         : fallbackFlashcards(chunks);
       return Response.json({ flashcards, live: Boolean(liveResult) });
