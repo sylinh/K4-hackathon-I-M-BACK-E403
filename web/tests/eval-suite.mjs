@@ -1,0 +1,307 @@
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const here = dirname(fileURLToPath(import.meta.url));
+const suitePath = resolve(here, "../../eval/cases.json");
+const resultsDir = resolve(here, "../../eval/results");
+const baseUrl = process.env.EVAL_BASE_URL || "http://localhost:3000";
+const delayMs = Number(process.env.EVAL_DELAY_MS || 900);
+const suite = JSON.parse(await readFile(suitePath, "utf8"));
+
+function normalize(value) {
+  return String(value ?? "")
+    .toLocaleLowerCase("vi")
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .replace(/đ/g, "d");
+}
+
+function collectCitations(actual) {
+  const matches = JSON.stringify(actual).match(/T\d{2}-\d{3}/g) ?? [];
+  return [...new Set(matches)];
+}
+
+function addCheck(checks, name, passed, detail) {
+  checks.push({ name, passed: Boolean(passed), detail });
+}
+
+function evaluateBehavior(expected, actualText, checks) {
+  if (expected.behavior === "insufficient-source") {
+    const signals = [
+      "không có",
+      "không đủ",
+      "chưa đủ",
+      "không thể",
+      "ngoài phạm vi",
+      "không đề cập",
+      "không cung cấp",
+    ];
+    addCheck(
+      checks,
+      "insufficient-source",
+      signals.some((signal) => actualText.includes(normalize(signal))),
+      "Phải nói rõ học liệu không đủ căn cứ.",
+    );
+  }
+  if (expected.behavior === "clarify") {
+    const signals = [
+      "làm rõ",
+      "cụ thể",
+      "bạn muốn",
+      "ý bạn",
+      "đoạn nào",
+      "nội dung nào",
+      "cái nào",
+    ];
+    addCheck(
+      checks,
+      "clarify",
+      signals.some((signal) => actualText.includes(normalize(signal))),
+      "Phải hỏi lại thay vì tự đoán.",
+    );
+  }
+}
+
+function evaluate(testCase, status, actual) {
+  const expected = testCase.expected;
+  const checks = [];
+  const citations = collectCitations(actual);
+  const actualText = normalize(JSON.stringify(actual));
+
+  addCheck(checks, "status", status === expected.status, `${status}/${expected.status}`);
+
+  if (expected.errorIncludes) {
+    addCheck(
+      checks,
+      "error-message",
+      normalize(actual.error).includes(normalize(expected.errorIncludes)),
+      actual.error ?? "Không có error.",
+    );
+  }
+
+  if (expected.citationPrefix) {
+    addCheck(
+      checks,
+      "citation-prefix",
+      citations.length > 0 &&
+        citations.every((id) => id.startsWith(expected.citationPrefix)),
+      citations.join(", ") || "Không có citation.",
+    );
+  }
+  if (expected.forbiddenCitationPrefix) {
+    addCheck(
+      checks,
+      "source-isolation",
+      citations.every(
+        (id) => !id.startsWith(expected.forbiddenCitationPrefix),
+      ),
+      `Cấm ${expected.forbiddenCitationPrefix}; nhận ${citations.join(", ") || "none"}.`,
+    );
+  }
+  if (expected.minimumCitations !== undefined) {
+    addCheck(
+      checks,
+      "minimum-citations",
+      citations.length >= expected.minimumCitations,
+      `${citations.length}/${expected.minimumCitations}`,
+    );
+  }
+  if (expected.requireLive) {
+    addCheck(checks, "gemini-live", actual.live === true, String(actual.live));
+  }
+
+  if (testCase.input.mode === "chat" && expected.status === 200) {
+    addCheck(
+      checks,
+      "chat-schema",
+      typeof actual.answer === "string" && Array.isArray(actual.citations),
+      "answer:string, citations:array",
+    );
+  }
+  if (expected.quizCount !== undefined) {
+    addCheck(
+      checks,
+      "quiz-count",
+      Array.isArray(actual.quiz) && actual.quiz.length === expected.quizCount,
+      `${actual.quiz?.length ?? 0}/${expected.quizCount}`,
+    );
+    const optionsValid =
+      Array.isArray(actual.quiz) &&
+      actual.quiz.every(
+        (item) =>
+          Array.isArray(item.options) &&
+          item.options.length === expected.optionCount &&
+          Number.isInteger(item.answer) &&
+          item.answer >= 0 &&
+          item.answer < expected.optionCount &&
+          typeof item.explain === "string" &&
+          typeof item.citation === "string",
+      );
+    addCheck(
+      checks,
+      "quiz-schema",
+      optionsValid,
+      `Mỗi câu cần ${expected.optionCount} lựa chọn, answer, explain, citation.`,
+    );
+  }
+  if (expected.flashcardCount !== undefined) {
+    addCheck(
+      checks,
+      "flashcard-count",
+      Array.isArray(actual.flashcards) &&
+        actual.flashcards.length === expected.flashcardCount,
+      `${actual.flashcards?.length ?? 0}/${expected.flashcardCount}`,
+    );
+    const cardsValid =
+      Array.isArray(actual.flashcards) &&
+      actual.flashcards.every(
+        (item) =>
+          typeof item.front === "string" &&
+          item.front.trim() &&
+          typeof item.back === "string" &&
+          item.back.trim() &&
+          typeof item.citation === "string",
+      );
+    addCheck(
+      checks,
+      "flashcard-schema",
+      cardsValid,
+      "Mỗi thẻ cần front, back và citation.",
+    );
+  }
+
+  if (expected.mustMentionAny) {
+    addCheck(
+      checks,
+      "required-concept",
+      expected.mustMentionAny.some((term) =>
+        actualText.includes(normalize(term)),
+      ),
+      expected.mustMentionAny.join(" | "),
+    );
+  }
+  if (expected.mustNotMentionAny) {
+    addCheck(
+      checks,
+      "forbidden-content",
+      expected.mustNotMentionAny.every(
+        (term) => !actualText.includes(normalize(term)),
+      ),
+      expected.mustNotMentionAny.join(" | "),
+    );
+  }
+
+  evaluateBehavior(expected, actualText, checks);
+  return {
+    passed: checks.every((check) => check.passed),
+    citations,
+    checks,
+  };
+}
+
+function wait(duration) {
+  return new Promise((resolveWait) => setTimeout(resolveWait, duration));
+}
+
+const results = [];
+for (const [index, testCase] of suite.cases.entries()) {
+  const startedAt = Date.now();
+  let status = 0;
+  let actual;
+  try {
+    const response = await fetch(`${baseUrl}/api/agent`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(testCase.input),
+    });
+    status = response.status;
+    actual = await response.json();
+  } catch (error) {
+    actual = { error: error instanceof Error ? error.message : String(error) };
+  }
+  const evaluation = evaluate(testCase, status, actual);
+  results.push({
+    id: testCase.id,
+    class: testCase.class,
+    source: testCase.source,
+    input: testCase.input,
+    expected: testCase.expected,
+    actualStatus: status,
+    actualOutput: actual,
+    latencyMs: Date.now() - startedAt,
+    ...evaluation,
+  });
+  const marker = evaluation.passed ? "PASS" : "FAIL";
+  console.log(
+    `${String(index + 1).padStart(2, "0")}/${suite.cases.length} ${marker} ${testCase.id}`,
+  );
+  if (index < suite.cases.length - 1) await wait(delayMs);
+}
+
+const passed = results.filter((result) => result.passed).length;
+const sourceCases = results.filter((result) =>
+  result.checks.some((check) => check.name === "source-isolation"),
+);
+const sourceIsolationPassed = sourceCases.filter((result) =>
+  result.checks.find((check) => check.name === "source-isolation")?.passed,
+).length;
+const outOfScopeCases = results.filter(
+  (result) => result.class === "out-of-scope",
+);
+const outOfScopePassed = outOfScopeCases.filter(
+  (result) => result.passed,
+).length;
+const liveResponses = results.filter(
+  (result) => result.actualOutput?.live === true,
+).length;
+const passRate = passed / results.length;
+const sourceIsolationRate =
+  sourceCases.length > 0 ? sourceIsolationPassed / sourceCases.length : 0;
+const outOfScopePassRate =
+  outOfScopeCases.length > 0
+    ? outOfScopePassed / outOfScopeCases.length
+    : 0;
+
+const report = {
+  suite: suite.suite,
+  generatedAt: new Date().toISOString(),
+  baseUrl,
+  qualityBar: suite.qualityBar,
+  summary: {
+    total: results.length,
+    passed,
+    failed: results.length - passed,
+    passRate,
+    sourceIsolationRate,
+    outOfScopePassRate,
+    liveResponses,
+    qualityBarPassed:
+      passRate >= suite.qualityBar.minimumPassRate &&
+      sourceIsolationRate >= suite.qualityBar.requiredSourceIsolationRate &&
+      outOfScopePassRate >= suite.qualityBar.requiredOutOfScopePassRate &&
+      liveResponses >= suite.qualityBar.minimumLiveResponses,
+  },
+  results,
+};
+
+await mkdir(resultsDir, { recursive: true });
+await writeFile(
+  resolve(resultsDir, "latest.json"),
+  `${JSON.stringify(report, null, 2)}\n`,
+  "utf8",
+);
+
+console.log(
+  `\n${passed}/${results.length} PASS (${(passRate * 100).toFixed(1)}%)`,
+);
+console.log(
+  `Source isolation: ${(sourceIsolationRate * 100).toFixed(1)}%`,
+);
+console.log(
+  `Out-of-scope: ${(outOfScopePassRate * 100).toFixed(1)}%`,
+);
+console.log(`Gemini live responses: ${liveResponses}/${results.length}`);
+console.log(
+  `Quality bar: ${report.summary.qualityBarPassed ? "PASSED" : "NOT MET"}`,
+);
