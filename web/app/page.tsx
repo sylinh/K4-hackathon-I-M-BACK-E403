@@ -37,10 +37,22 @@ import {
   DragEvent,
   FormEvent,
   MouseEvent,
+  useCallback,
   useEffect,
   useRef,
   useState,
 } from "react";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+
+type PdfTextItem = {
+  text: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  fontSize: number;
+  rotation: number;
+};
 
 type SlidePage = {
   id: string;
@@ -53,15 +65,8 @@ type SlidePage = {
   kind?: "slide" | "document";
   aspectRatio?: number;
   previewDataUrl?: string;
-  textLayer?: Array<{
-    text: string;
-    left: number;
-    top: number;
-    width: number;
-    height: number;
-    fontSize: number;
-    rotation: number;
-  }>;
+  textLayer?: PdfTextItem[];
+  pdfPageNumber?: number;
 };
 
 type Material = {
@@ -101,6 +106,25 @@ type AgentTab = "chat" | "quiz" | "flashcards";
 
 const accentOrder: SlidePage["accent"][] = ["blue", "coral", "mint", "amber"];
 
+function bundledPdfPages(
+  materialId: string,
+  courseTitle: string,
+  pageCount: number,
+): SlidePage[] {
+  return Array.from({ length: pageCount }, (_, index) => ({
+    id: `${materialId}-page-${index + 1}`,
+    eyebrow: `PDF • TRANG ${index + 1}`,
+    title: index === 0 ? courseTitle : `Trang ${index + 1}`,
+    subtitle: "Đang nạp nội dung nguyên bản…",
+    paragraphs: [],
+    points: [],
+    accent: accentOrder[index % accentOrder.length],
+    kind: "slide",
+    aspectRatio: 16 / 9,
+    pdfPageNumber: index + 1,
+  }));
+}
+
 const initialMaterials: Material[] = [
   {
     id: "day-1-foundation",
@@ -110,17 +134,11 @@ const initialMaterials: Material[] = [
     updated: "Học liệu lớp",
     sourceUrl: "/materials/d1-slide-hackathon.pdf",
     transcriptLabel: "Transcript 04 · T04",
-    pages: [
-      {
-        id: "day-1-loading",
-        eyebrow: "AI IN ACTION · DAY 01",
-        title: "AI & LLM Foundation",
-        subtitle: "Đang nạp slide và liên kết Transcript 04…",
-        paragraphs: [],
-        points: [],
-        accent: "blue",
-      },
-    ],
+    pages: bundledPdfPages(
+      "day-1-foundation",
+      "AI & LLM Foundation",
+      29,
+    ),
   },
   {
     id: "day-2-product",
@@ -130,19 +148,11 @@ const initialMaterials: Material[] = [
     updated: "Học liệu lớp",
     sourceUrl: "/materials/d2-slide-hackathon.pdf",
     transcriptLabel: "Transcript 01 · T01",
-    pages: [
-      {
-        id: "day-2-loading",
-        eyebrow: "AI IN ACTION · DAY 02",
-        title: "Xác định bài toán cho AI",
-        subtitle: "Đang nạp slide và liên kết Transcript 01…",
-        paragraphs: [
-          "Từ yêu cầu mơ hồ đến Problem Statement rõ ràng.",
-        ],
-        points: [],
-        accent: "coral",
-      },
-    ],
+    pages: bundledPdfPages(
+      "day-2-product",
+      "Xác định bài toán cho AI",
+      29,
+    ),
   },
 ];
 
@@ -206,6 +216,93 @@ function makePage(
   };
 }
 
+type PdfJsModule = typeof import("pdfjs-dist");
+
+let pdfWorkerConfigured = false;
+const pdfDocumentCache = new Map<string, Promise<PDFDocumentProxy>>();
+
+async function loadPdfJs() {
+  const pdfjs = await import("pdfjs-dist");
+  if (!pdfWorkerConfigured) {
+    pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+    pdfWorkerConfigured = true;
+  }
+  return pdfjs;
+}
+
+async function loadBundledPdf(sourceUrl: string) {
+  const cached = pdfDocumentCache.get(sourceUrl);
+  if (cached) return cached;
+
+  const loading = loadPdfJs()
+    .then((pdfjs) => pdfjs.getDocument({ url: sourceUrl }).promise)
+    .catch((error) => {
+      pdfDocumentCache.delete(sourceUrl);
+      throw error;
+    });
+  pdfDocumentCache.set(sourceUrl, loading);
+  return loading;
+}
+
+async function renderPdfPage(
+  pdfPage: PDFPageProxy,
+  pageNumber: number,
+  pdfjs: PdfJsModule,
+  targetWidth = 1280,
+) {
+  const baseViewport = pdfPage.getViewport({ scale: 1 });
+  const renderScale = Math.min(
+    2,
+    Math.max(1, targetWidth / baseViewport.width),
+  );
+  const viewport = pdfPage.getViewport({ scale: renderScale });
+  const content = await pdfPage.getTextContent();
+  const blocks = content.items
+    .map((item) => ("str" in item ? item.str : ""))
+    .map(cleanText)
+    .filter(Boolean);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.ceil(viewport.width);
+  canvas.height = Math.ceil(viewport.height);
+  const canvasContext = canvas.getContext("2d", { alpha: false });
+  if (!canvasContext) throw new Error("canvas-unavailable");
+  canvasContext.fillStyle = "#ffffff";
+  canvasContext.fillRect(0, 0, canvas.width, canvas.height);
+  await pdfPage.render({
+    canvas,
+    canvasContext,
+    viewport,
+  }).promise;
+
+  const ratio = viewport.width / viewport.height;
+  const renderedPage = makePage(
+    blocks,
+    pageNumber - 1,
+    "PDF",
+    ratio > 1.15 ? "slide" : "document",
+    ratio,
+  );
+  renderedPage.previewDataUrl = canvas.toDataURL("image/jpeg", 0.86);
+  renderedPage.textLayer = content.items.flatMap((item) => {
+    if (!("str" in item) || !cleanText(item.str)) return [];
+    const matrix = pdfjs.Util.transform(viewport.transform, item.transform);
+    const fontHeight = Math.max(1, Math.hypot(matrix[2], matrix[3]));
+    const renderedWidth = Math.max(1, item.width * renderScale);
+    return [
+      {
+        text: item.str,
+        left: (matrix[4] / viewport.width) * 100,
+        top: ((matrix[5] - fontHeight) / viewport.height) * 100,
+        width: (renderedWidth / viewport.width) * 100,
+        height: (fontHeight / viewport.height) * 100,
+        fontSize: (fontHeight / viewport.height) * 100,
+        rotation: (Math.atan2(matrix[1], matrix[0]) * 180) / Math.PI,
+      },
+    ];
+  });
+  return renderedPage;
+}
+
 async function extractOfficePages(file: File): Promise<SlidePage[]> {
   const zip = await JSZip.loadAsync(file);
   const type = typeFromFile(file);
@@ -262,70 +359,175 @@ async function extractOfficePages(file: File): Promise<SlidePage[]> {
 }
 
 async function extractPdfPages(file: File): Promise<SlidePage[]> {
-  const pdfjs = await import("pdfjs-dist");
-  pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
+  const pdfjs = await loadPdfJs();
   const data = new Uint8Array(await file.arrayBuffer());
-  const pdf = await pdfjs.getDocument({ data }).promise;
+  const loadingTask = pdfjs.getDocument({ data });
+  const pdf = await loadingTask.promise;
   const limit = Math.min(pdf.numPages, 60);
   const pages: SlidePage[] = [];
 
   for (let pageNumber = 1; pageNumber <= limit; pageNumber += 1) {
     const pdfPage = await pdf.getPage(pageNumber);
-    const baseViewport = pdfPage.getViewport({ scale: 1 });
-    const renderScale = Math.min(
-      2,
-      Math.max(1.25, 1440 / baseViewport.width),
+    const extractedPage = await renderPdfPage(
+      pdfPage,
+      pageNumber,
+      pdfjs,
+      1280,
     );
-    const viewport = pdfPage.getViewport({ scale: renderScale });
-    const content = await pdfPage.getTextContent();
-    const blocks = content.items
-      .map((item) => ("str" in item ? item.str : ""))
-      .map(cleanText)
-      .filter(Boolean);
-    const canvas = document.createElement("canvas");
-    canvas.width = Math.ceil(viewport.width);
-    canvas.height = Math.ceil(viewport.height);
-    const canvasContext = canvas.getContext("2d", { alpha: false });
-    if (!canvasContext) throw new Error("canvas-unavailable");
-    canvasContext.fillStyle = "#ffffff";
-    canvasContext.fillRect(0, 0, canvas.width, canvas.height);
-    await pdfPage.render({
-      canvas,
-      canvasContext,
-      viewport,
-    }).promise;
-
-    const ratio = viewport.width / viewport.height;
-    const extractedPage = makePage(
-      blocks,
-      pageNumber - 1,
-      "PDF",
-      ratio > 1.15 ? "slide" : "document",
-      ratio,
-    );
-    extractedPage.previewDataUrl = canvas.toDataURL("image/jpeg", 0.9);
-    extractedPage.textLayer = content.items.flatMap((item) => {
-      if (!("str" in item) || !cleanText(item.str)) return [];
-      const matrix = pdfjs.Util.transform(viewport.transform, item.transform);
-      const fontHeight = Math.max(1, Math.hypot(matrix[2], matrix[3]));
-      const renderedWidth = Math.max(1, item.width * renderScale);
-      return [
-        {
-          text: item.str,
-          left: (matrix[4] / viewport.width) * 100,
-          top: ((matrix[5] - fontHeight) / viewport.height) * 100,
-          width: (renderedWidth / viewport.width) * 100,
-          height: (fontHeight / viewport.height) * 100,
-          fontSize: (fontHeight / viewport.height) * 100,
-          rotation: (Math.atan2(matrix[1], matrix[0]) * 180) / Math.PI,
-        },
-      ];
-    });
     pages.push(extractedPage);
     pdfPage.cleanup();
   }
-  await pdf.destroy();
+  await loadingTask.destroy();
   return pages;
+}
+
+function PdfPagePreview({
+  materialId,
+  sourceUrl,
+  pageNumber,
+  pageCount,
+  materialName,
+  highlights,
+  onPageReady,
+}: {
+  materialId: string;
+  sourceUrl: string;
+  pageNumber: number;
+  pageCount: number;
+  materialName: string;
+  highlights: string[];
+  onPageReady: (
+    materialId: string,
+    pageNumber: number,
+    page: SlidePage,
+  ) => void;
+}) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [shouldRender, setShouldRender] = useState(pageNumber === 1);
+  const [renderedPage, setRenderedPage] = useState<SlidePage | null>(null);
+  const [loadError, setLoadError] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
+
+  useEffect(() => {
+    if (shouldRender || !hostRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setShouldRender(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "900px 0px" },
+    );
+    observer.observe(hostRef.current);
+    return () => observer.disconnect();
+  }, [shouldRender]);
+
+  useEffect(() => {
+    if (!shouldRender) return;
+    let cancelled = false;
+
+    async function loadPage() {
+      try {
+        const [pdfjs, pdf] = await Promise.all([
+          loadPdfJs(),
+          loadBundledPdf(sourceUrl),
+        ]);
+        const pdfPage = await pdf.getPage(pageNumber);
+        const rendered = await renderPdfPage(
+          pdfPage,
+          pageNumber,
+          pdfjs,
+          pageNumber === 1 ? 1440 : 1120,
+        );
+        pdfPage.cleanup();
+        if (cancelled) return;
+        setRenderedPage(rendered);
+        onPageReady(materialId, pageNumber, rendered);
+      } catch {
+        if (!cancelled) setLoadError(true);
+      }
+    }
+
+    void loadPage();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    materialId,
+    onPageReady,
+    pageNumber,
+    retryNonce,
+    shouldRender,
+    sourceUrl,
+  ]);
+
+  return (
+    <div className="pdf-native-page" ref={hostRef}>
+      {renderedPage?.previewDataUrl ? (
+        <>
+          <img
+            src={renderedPage.previewDataUrl}
+            alt={`${materialName} — trang ${pageNumber}`}
+            draggable={false}
+          />
+          <div
+            className="pdf-text-layer"
+            aria-label={`Lớp văn bản có thể bôi sáng của trang ${pageNumber}`}
+          >
+            {renderedPage.textLayer?.map((textItem, textIndex) => (
+              <span
+                key={`${pageNumber}-pdf-text-${textIndex}`}
+                data-highlightable
+                className={
+                  highlights.includes(cleanText(textItem.text))
+                    ? "is-highlighted"
+                    : ""
+                }
+                style={{
+                  left: `${textItem.left}%`,
+                  top: `${textItem.top}%`,
+                  width: `${textItem.width}%`,
+                  height: `${textItem.height}%`,
+                  fontSize: `${textItem.fontSize}%`,
+                  transform: `rotate(${textItem.rotation}deg)`,
+                }}
+              >
+                {textItem.text}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : loadError ? (
+        <div className="pdf-page-state is-error">
+          <strong>Không thể dựng trang {pageNumber}</strong>
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                setLoadError(false);
+                setRenderedPage(null);
+                setRetryNonce((value) => value + 1);
+              }}
+            >
+              Thử lại
+            </button>
+            <a href={`${sourceUrl}#page=${pageNumber}`} target="_blank" rel="noreferrer">
+              Mở PDF gốc
+            </a>
+          </div>
+        </div>
+      ) : (
+        <div className="pdf-page-state" aria-label={`Đang nạp trang ${pageNumber}`}>
+          <span className="pdf-loading-mark" />
+          <strong>Đang nạp trang {pageNumber}</strong>
+        </div>
+      )}
+      <div className="native-page-label">
+        {pageNumber} / {pageCount}
+      </div>
+    </div>
+  );
 }
 
 async function extractTextPages(file: File): Promise<SlidePage[]> {
@@ -390,7 +592,33 @@ export default function Home() {
   const chatEndRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const selectionHandledRef = useRef(false);
-  const loadedCourseIdsRef = useRef(new Set<string>());
+
+  const updateBundledPage = useCallback(
+    (materialId: string, pageNumber: number, renderedPage: SlidePage) => {
+      setMaterials((current) =>
+        current.map((material) => {
+          if (material.id !== materialId) return material;
+          return {
+            ...material,
+            pages: material.pages.map((existingPage, index) =>
+              index === pageNumber - 1
+                ? {
+                    ...existingPage,
+                    title: renderedPage.title,
+                    subtitle: renderedPage.subtitle,
+                    paragraphs: renderedPage.paragraphs,
+                    points: renderedPage.points,
+                    kind: renderedPage.kind,
+                    aspectRatio: renderedPage.aspectRatio,
+                  }
+                : existingPage,
+            ),
+          };
+        }),
+      );
+    },
+    [],
+  );
 
   const activeMaterial =
     materials.find((material) => material.id === activeMaterialId) ?? materials[0];
@@ -411,50 +639,6 @@ export default function Home() {
   useEffect(() => {
     if (viewerRef.current) viewerRef.current.scrollTop = 0;
   }, [activeMaterialId]);
-
-  useEffect(() => {
-    if (
-      !activeMaterial.sourceUrl ||
-      loadedCourseIdsRef.current.has(activeMaterial.id)
-    ) {
-      return;
-    }
-    loadedCourseIdsRef.current.add(activeMaterial.id);
-    let cancelled = false;
-
-    async function loadCourseSlides() {
-      setIsProcessing(true);
-      setProcessingLabel(`Đang nạp ${activeMaterial.name}…`);
-      try {
-        const response = await fetch(activeMaterial.sourceUrl!);
-        if (!response.ok) throw new Error("slides");
-        const blob = await response.blob();
-        const file = new File([blob], `${activeMaterial.id}.pdf`, {
-          type: "application/pdf",
-        });
-        const pages = await extractPdfPages(file);
-        if (cancelled || pages.length === 0) return;
-        setMaterials((current) =>
-          current.map((material) =>
-            material.id === activeMaterial.id ? { ...material, pages } : material,
-          ),
-        );
-        setToast(
-          `${pages.length} trang đã liên kết với ${activeMaterial.transcriptLabel}`,
-        );
-      } catch {
-        loadedCourseIdsRef.current.delete(activeMaterial.id);
-        setToast("Không thể nạp slide của buổi học");
-      } finally {
-        if (!cancelled) setIsProcessing(false);
-      }
-    }
-
-    void loadCourseSlides();
-    return () => {
-      cancelled = true;
-    };
-  }, [activeMaterial]);
 
   function selectMaterial(material: Material) {
     setActiveMaterialId(material.id);
@@ -1065,13 +1249,27 @@ export default function Home() {
                   data-page-index={viewerIndex}
                   className={`document-page format-${pageKind} accent-${viewerPage.accent} ${
                     viewerIndex === pageIndex ? "is-current-page" : ""
-                  } ${viewerPage.previewDataUrl ? "has-native-preview" : ""}`}
+                  } ${
+                    viewerPage.previewDataUrl || viewerPage.pdfPageNumber
+                      ? "has-native-preview"
+                      : ""
+                  }`}
                   style={{ aspectRatio: String(pageRatio) }}
                   key={viewerPage.id}
                   onMouseUp={() => handleTextSelection(viewerIndex)}
                   onClick={(event) => handlePageClick(event, viewerIndex)}
                 >
-                  {viewerPage.previewDataUrl ? (
+                  {viewerPage.pdfPageNumber && activeMaterial.sourceUrl ? (
+                    <PdfPagePreview
+                      materialId={activeMaterial.id}
+                      sourceUrl={activeMaterial.sourceUrl}
+                      pageNumber={viewerPage.pdfPageNumber}
+                      pageCount={activeMaterial.pages.length}
+                      materialName={activeMaterial.name}
+                      highlights={highlights}
+                      onPageReady={updateBundledPage}
+                    />
+                  ) : viewerPage.previewDataUrl ? (
                     <div className="pdf-native-page">
                       <img
                         src={viewerPage.previewDataUrl}

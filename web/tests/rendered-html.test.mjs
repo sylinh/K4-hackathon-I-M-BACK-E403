@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import test from "node:test";
 
@@ -20,7 +21,10 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /activeMaterial\.pages\.map/);
   assert.match(page, /Cuộn liên tục/);
   assert.match(page, /data-page-index/);
-  assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.9\)/);
+  assert.match(page, /bundledPdfPages/);
+  assert.match(page, /IntersectionObserver/);
+  assert.match(page, /loadBundledPdf/);
+  assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.86\)/);
   assert.match(page, /pdf-text-layer/);
   assert.match(page, /previewDataUrl/);
   assert.doesNotMatch(page, /className="viewer-footer"/);
@@ -45,18 +49,37 @@ test("ships the complete VLearn Focus learning flow", async () => {
 });
 
 test("includes production assets and API routes", async () => {
-  const [ogStats, dayOneStats, dayTwoStats, agentRoute, materialRoute, distEntries] = await Promise.all([
+  const [
+    ogStats,
+    dayOneAsset,
+    dayTwoAsset,
+    dayOneSource,
+    dayTwoSource,
+    agentRoute,
+    materialRoute,
+    distEntries,
+  ] = await Promise.all([
     stat(new URL("public/og.png", root)),
-    stat(new URL("public/materials/d1-slide-hackathon.pdf", root)),
-    stat(new URL("public/materials/d2-slide-hackathon.pdf", root)),
+    readFile(new URL("public/materials/d1-slide-hackathon.pdf", root)),
+    readFile(new URL("public/materials/d2-slide-hackathon.pdf", root)),
+    readFile(new URL("../data/vlearn-pack/slides/d1-slide-hackathon.pdf", root)),
+    readFile(new URL("../data/vlearn-pack/slides/d2-slide-hackathon.pdf", root)),
     readFile(new URL("app/api/agent/route.ts", root), "utf8"),
     readFile(new URL("app/api/materials/route.ts", root), "utf8"),
     readdir(new URL("dist/", root)),
   ]);
 
   assert.ok(ogStats.size > 100_000);
-  assert.ok(dayOneStats.size > 1_000_000);
-  assert.ok(dayTwoStats.size > 1_000_000);
+  assert.ok(dayOneAsset.length > 1_000_000);
+  assert.ok(dayTwoAsset.length > 1_000_000);
+  assert.equal(
+    createHash("sha256").update(dayOneAsset).digest("hex"),
+    createHash("sha256").update(dayOneSource).digest("hex"),
+  );
+  assert.equal(
+    createHash("sha256").update(dayTwoAsset).digest("hex"),
+    createHash("sha256").update(dayTwoSource).digest("hex"),
+  );
   assert.match(agentRoute, /generativelanguage\.googleapis\.com/);
   assert.match(agentRoute, /gemini-3\.6-flash/);
   assert.match(agentRoute, /transcript-04-clean\.md\?raw/);

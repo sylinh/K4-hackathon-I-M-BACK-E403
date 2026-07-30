@@ -722,6 +722,77 @@ input:focus-visible {
   user-select: none;
 }
 
+.pdf-page-state {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background:
+    linear-gradient(110deg, transparent 34%, rgba(255, 255, 255, 0.78) 48%, transparent 62%),
+    #eef2f7;
+  background-size: 240% 100%;
+  color: #526078;
+  font-size: 13px;
+  animation: pdf-page-loading 1.4s ease-in-out infinite;
+}
+
+.pdf-page-state.is-error {
+  background: #f7f8fa;
+  animation: none;
+}
+
+.pdf-page-state > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pdf-page-state button,
+.pdf-page-state a {
+  border: 1px solid #cbd3df;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #26364f;
+  padding: 7px 10px;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.pdf-page-state button:hover,
+.pdf-page-state a:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.pdf-loading-mark {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #d4dbe6;
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: pdf-loading-spin 720ms linear infinite;
+}
+
+@keyframes pdf-page-loading {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+@keyframes pdf-loading-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .pdf-text-layer {
   position: absolute;
   inset: 0;
