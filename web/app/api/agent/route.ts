@@ -39,6 +39,9 @@ type GroundedAnswer = {
   confidence: GroundingLevel;
   note: string;
   citations: string[];
+  action?: "answer" | "ask_clarify" | "refuse";
+  reasoning?: string;
+  sources?: string[];
 };
 
 const transcriptByMaterial = {
@@ -66,9 +69,7 @@ function compact(value: string, limit: number) {
 }
 
 function parseTranscript(markdown: string): TranscriptChunk[] {
-  const markers = Array.from(
-    markdown.matchAll(/\*\*\[(T\d{2}-\d{3})\]\*\*/g),
-  );
+  const markers = Array.from(markdown.matchAll(/\*\*\[(T\d{2}-\d{3})\]\*\*/g));
   return markers.flatMap((marker, index) => {
     const start = (marker.index ?? 0) + marker[0].length;
     const end = markers[index + 1]?.index ?? markdown.length;
@@ -127,8 +128,7 @@ function rankChunks(
       );
       const contextBonus = context
         .split(/\s+/)
-        .filter((term) => term.length > 8 && chunk.text.includes(term))
-        .length;
+        .filter((term) => term.length > 8 && chunk.text.includes(term)).length;
       return { chunk, index, score: overlap + contextBonus * 2 };
     })
     .sort((a, b) => b.score - a.score || a.index - b.index);
@@ -137,14 +137,14 @@ function rankChunks(
   if (selected.length >= Math.min(5, limit)) {
     return selected.map((item) => item.chunk);
   }
-  return ranked.slice(0, Math.min(limit, chunks.length)).map((item) => item.chunk);
+  return ranked
+    .slice(0, Math.min(limit, chunks.length))
+    .map((item) => item.chunk);
 }
 
 function contextChunks(context: string) {
   const matches = Array.from(
-    context.matchAll(
-      /\[Trang\s+(\d+)\]\s*([\s\S]*?)(?=\n\[Trang\s+\d+\]|$)/gi,
-    ),
+    context.matchAll(/\[Trang\s+(\d+)\]\s*([\s\S]*?)(?=\n\[Trang\s+\d+\]|$)/gi),
   );
   if (matches.length === 0) {
     const text = compact(context, 3200);
@@ -188,7 +188,8 @@ function extractGeminiText(payload: unknown) {
   return candidates
     .flatMap((candidate) => {
       if (!candidate || typeof candidate !== "object") return [];
-      const content = (candidate as { content?: { parts?: unknown[] } }).content;
+      const content = (candidate as { content?: { parts?: unknown[] } })
+        .content;
       return Array.isArray(content?.parts) ? content.parts : [];
     })
     .map((part) =>
@@ -231,6 +232,12 @@ function insufficientAnswer(
         ? `Thông tin còn thiếu: ${missing}`
         : `Missing information: ${missing}`,
     citations: [],
+    action: "refuse",
+    reasoning:
+      language === "vi"
+        ? "Tài liệu không cung cấp đủ bằng chứng để trả lời câu hỏi này một cách chính xác."
+        : "The document does not provide enough evidence to answer this question accurately.",
+    sources: [],
   };
 }
 
@@ -250,6 +257,12 @@ function clarifyAnswer(
         ? "Câu hỏi hiện có thể chỉ nhiều đối tượng hoặc nội dung khác nhau."
         : "The question may currently refer to multiple subjects or sections.",
     citations: [],
+    action: "ask_clarify",
+    reasoning:
+      language === "vi"
+        ? "Câu hỏi cần thông tin cụ thể hơn hoặc chỉ rõ phần slide để trả lời chính xác."
+        : "The question requires more specific slide context or detail to answer accurately.",
+    sources: [],
   };
 }
 
@@ -269,6 +282,12 @@ function refuseAnswer(
         ? "Tôi chỉ hỗ trợ học tập dựa trên tài liệu đang mở."
         : "I only provide learning support based on the open document.",
     citations: [],
+    action: "refuse",
+    reasoning:
+      language === "vi"
+        ? "Yêu cầu này nằm ngoài phạm vi hoặc chứa thông tin nhạy cảm không được phép trả lời."
+        : "This request is out of scope or contains sensitive information that should not be answered.",
+    sources: [],
   };
 }
 
@@ -478,10 +497,7 @@ function fallbackChat(
   );
   let groundedText = compact(primary.text || contextText, 620);
   let confidence: GroundingLevel = "Được nêu trực tiếp";
-  if (
-    /chatbot/i.test(question) &&
-    /giải pháp bề mặt/i.test(contextText)
-  ) {
+  if (/chatbot/i.test(question) && /giải pháp bề mặt/i.test(contextText)) {
     groundedText =
       language === "vi"
         ? `${contextText} Có thể suy ra đội sản phẩm cần hỏi lại để xác định vấn đề hoặc pain point trước khi chọn chatbot làm giải pháp.`
@@ -531,13 +547,16 @@ function fallbackChat(
     confidence,
     note: "",
     citations: chunks.slice(0, 2).map((chunk) => chunk.id),
+    action: "answer",
+    reasoning:
+      language === "vi"
+        ? "Trả lời dựa trên đoạn slide được lấy làm nguồn chính, có thể suy ra hoặc trực tiếp từ nội dung."
+        : "Answer based on the selected slide content, either directly stated or reasonably inferred from it.",
+    sources: [primary.id],
   };
 }
 
-function fallbackQuiz(
-  chunks: TranscriptChunk[],
-  language: ResponseLanguage,
-) {
+function fallbackQuiz(chunks: TranscriptChunk[], language: ResponseLanguage) {
   if (chunks.length === 0) return [];
   return Array.from({ length: QUIZ_COUNT }, (_, index) => {
     const chunk = chunks[index % chunks.length];
@@ -622,8 +641,8 @@ function promptForMode(
   const citationFormat = "Pxxx";
   const responseLanguage =
     options.language === "vi"
-      ? 'Viết toàn bộ nội dung trả lời bằng tiếng Việt.'
-      : 'Write all answer, evidence claims, notes, quiz content, and flashcards in English.';
+      ? "Viết toàn bộ nội dung trả lời bằng tiếng Việt."
+      : "Write all answer, evidence claims, notes, quiz content, and flashcards in English.";
   const insufficientText =
     options.language === "vi"
       ? "Không tìm thấy đủ thông tin trong tài liệu để kết luận."
@@ -689,7 +708,7 @@ CÂU HỎI:
 ${compact(question, 1000)}
 
 Trả về JSON thuần:
-{"answer":"Câu trả lời trực tiếp, ngắn gọn.","evidence":[{"claim":"Khẳng định được tài liệu hỗ trợ.","citation":"${options.material}, ${citationFormat}"}],"confidence":"Được nêu trực tiếp","note":"","citations":["${citationFormat}"]}
+{"action":"answer","answer":"Câu trả lời trực tiếp, ngắn gọn.","reasoning":"Giải thích ngắn gọn tại sao trả lời như vậy.","sources":["${citationFormat}"],"evidence":[{"claim":"Khẳng định được tài liệu hỗ trợ.","citation":"${options.material}, ${citationFormat}"}],"confidence":"Được nêu trực tiếp","note":"","citations":["${citationFormat}"]}
 
 evidence và citations phải là mảng rỗng khi không đủ thông tin hoặc đang yêu cầu làm rõ. note là chuỗi rỗng khi không có mâu thuẫn, ngoại lệ hay thông tin còn thiếu.`;
 }
@@ -721,13 +740,7 @@ function schemaForMode(mode: AgentMode) {
               explain: { type: "string" },
               citation,
             },
-            required: [
-              "question",
-              "options",
-              "answer",
-              "explain",
-              "citation",
-            ],
+            required: ["question", "options", "answer", "explain", "citation"],
           },
         },
       },
@@ -759,7 +772,17 @@ function schemaForMode(mode: AgentMode) {
   return {
     type: "object",
     properties: {
+      action: {
+        type: "string",
+        enum: ["answer", "ask_clarify", "refuse"],
+      },
       answer: { type: "string" },
+      reasoning: { type: "string" },
+      sources: {
+        type: "array",
+        minItems: 1,
+        items: citation,
+      },
       evidence: {
         type: "array",
         maxItems: 7,
@@ -774,11 +797,7 @@ function schemaForMode(mode: AgentMode) {
       },
       confidence: {
         type: "string",
-        enum: [
-          "Được nêu trực tiếp",
-          "Được suy ra",
-          "Không đủ thông tin",
-        ],
+        enum: ["Được nêu trực tiếp", "Được suy ra", "Không đủ thông tin"],
       },
       note: { type: "string" },
       citations: {
@@ -787,7 +806,16 @@ function schemaForMode(mode: AgentMode) {
         items: citation,
       },
     },
-    required: ["answer", "evidence", "confidence", "note", "citations"],
+    required: [
+      "action",
+      "answer",
+      "reasoning",
+      "sources",
+      "evidence",
+      "confidence",
+      "note",
+      "citations",
+    ],
   };
 }
 
@@ -921,7 +949,9 @@ async function callGemini(prompt: string, mode: AgentMode) {
   return null;
 }
 
-function isMaterialId(value: string): value is keyof typeof transcriptByMaterial {
+function isMaterialId(
+  value: string,
+): value is keyof typeof transcriptByMaterial {
   return value in transcriptByMaterial;
 }
 
@@ -941,8 +971,7 @@ export async function POST(request: Request) {
           .filter(Boolean)
           .slice(0, 80)
       : [];
-    const language: ResponseLanguage =
-      payload.language === "en" ? "en" : "vi";
+    const language: ResponseLanguage = payload.language === "en" ? "en" : "vi";
     const scope: SourceScope =
       payload.scope === "all-document" ? "all-document" : "current-page";
     const page = Math.max(1, Number(payload.page) || 1);
@@ -995,9 +1024,7 @@ export async function POST(request: Request) {
       {
         scope,
         material,
-        sourceKind: pairedMaterial
-          ? "paired-transcript"
-          : "uploaded-document",
+        sourceKind: pairedMaterial ? "paired-transcript" : "uploaded-document",
         focus,
         page,
         pageCount,
@@ -1019,8 +1046,8 @@ export async function POST(request: Request) {
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
         )
-        ? liveResult.quiz.slice(0, QUIZ_COUNT)
-        : fallbackQuiz(primaryChunks, language);
+          ? liveResult.quiz.slice(0, QUIZ_COUNT)
+          : fallbackQuiz(primaryChunks, language);
       return Response.json({ quiz, live: Boolean(liveResult) });
     }
     if (mode === "flashcards") {
@@ -1034,8 +1061,8 @@ export async function POST(request: Request) {
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
         )
-        ? liveResult.flashcards.slice(0, FLASHCARD_COUNT)
-        : fallbackFlashcards(primaryChunks, language);
+          ? liveResult.flashcards.slice(0, FLASHCARD_COUNT)
+          : fallbackFlashcards(primaryChunks, language);
       return Response.json({ flashcards, live: Boolean(liveResult) });
     }
 
@@ -1061,9 +1088,7 @@ export async function POST(request: Request) {
           if (typeof claim !== "string" || typeof citation !== "string") {
             return [];
           }
-          const citedId = [...allowedIds].find((id) =>
-            citation.includes(id),
-          );
+          const citedId = [...allowedIds].find((id) => citation.includes(id));
           return citedId
             ? [{ claim, citation: `${material}, ${citedId}` }]
             : [];
@@ -1097,7 +1122,19 @@ export async function POST(request: Request) {
     }
 
     return Response.json({
+      action:
+        groundedLiveResult && typeof liveResult?.action === "string"
+          ? liveResult.action
+          : fallback.action,
       answer: groundedLiveResult ? liveResult.answer : fallback.answer,
+      reasoning:
+        groundedLiveResult && typeof liveResult?.reasoning === "string"
+          ? liveResult.reasoning
+          : fallback.reasoning,
+      sources:
+        groundedLiveResult && Array.isArray(liveResult?.sources)
+          ? liveResult.sources
+          : fallback.sources,
       evidence: groundedLiveResult ? liveEvidence : fallback.evidence,
       confidence: groundedLiveResult ? confidence : fallback.confidence,
       note:
