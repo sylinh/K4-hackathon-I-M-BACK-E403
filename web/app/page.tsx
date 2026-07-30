@@ -2201,6 +2201,38 @@ export default function Home() {
           >
             {language.toUpperCase()}
           </button>
+          <details className="personal-notebook-menu">
+            <summary title="Sổ tay cá nhân" aria-label="Mở Sổ tay cá nhân">
+              <BookOpen size={16} />
+              <span className="desktop-only">Sổ tay</span>
+              {savedLearningSets.length > 0 && <b>{savedLearningSets.length}</b>}
+            </summary>
+            <section className="personal-notebook-popover" aria-label="Sổ tay cá nhân">
+              <div className="personal-notebook-heading">
+                <span>Sổ tay cá nhân</span>
+                {savedLearningSets.length > 0 && <small>{savedLearningSets.length}</small>}
+              </div>
+              {savedLearningSets.length === 0 ? (
+                <p>Lưu Quiz hoặc Flashcard để ôn lại sau.</p>
+              ) : (
+                <div className="personal-notebook-list">
+                  {savedLearningSets.slice(0, 5).map((savedSet) => (
+                    <button
+                      key={savedSet.id}
+                      type="button"
+                      onClick={() => openSavedLearningSet(savedSet)}
+                    >
+                      <span>{savedSet.kind === "quiz" ? "Quiz" : "Flashcard"}</span>
+                      <strong>{savedSet.materialName}</strong>
+                      <small>
+                        Trang {savedSet.pageIndex + 1} · {savedSet.kind === "quiz" ? savedSet.quiz?.length : savedSet.flashcards?.length} mục
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          </details>
           <button
             className="icon-button"
             onClick={() => setIsDark((value) => !value)}
@@ -2307,34 +2339,6 @@ export default function Home() {
             );
           })}
         </div>
-
-        <section className="personal-notebook" aria-label="Sổ tay cá nhân">
-          <div className="personal-notebook-heading">
-            <span>
-              <BookOpen size={14} /> Sổ tay cá nhân
-            </span>
-            {savedLearningSets.length > 0 && <small>{savedLearningSets.length}</small>}
-          </div>
-          {savedLearningSets.length === 0 ? (
-            <p>Lưu Quiz hoặc Flashcard để ôn lại sau.</p>
-          ) : (
-            <div className="personal-notebook-list">
-              {savedLearningSets.slice(0, 3).map((savedSet) => (
-                <button
-                  key={savedSet.id}
-                  type="button"
-                  onClick={() => openSavedLearningSet(savedSet)}
-                >
-                  <span>{savedSet.kind === "quiz" ? "Quiz" : "Flashcard"}</span>
-                  <strong>{savedSet.materialName}</strong>
-                  <small>
-                    Trang {savedSet.pageIndex + 1} · {savedSet.kind === "quiz" ? savedSet.quiz?.length : savedSet.flashcards?.length} mục
-                  </small>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
 
         <div className="library-tip">
           <Sparkles size={17} />
