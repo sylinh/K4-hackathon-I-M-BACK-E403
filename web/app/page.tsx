@@ -38,6 +38,7 @@ import JSZip from "jszip";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import {
   ChangeEvent,
+  CSSProperties,
   DragEvent,
   FormEvent,
   MouseEvent,
@@ -1184,6 +1185,8 @@ export default function Home() {
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
+  const [agentPanelWidth, setAgentPanelWidth] = useState(372);
+  const [isAgentResizing, setIsAgentResizing] = useState(false);
   const [quizIndex, setQuizIndex] = useState(0);
   const [quizAnswers, setQuizAnswers] = useState<number[]>([]);
   const [quizChecked, setQuizChecked] = useState(false);
@@ -1201,6 +1204,7 @@ export default function Home() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const moreToolsRef = useRef<HTMLDivElement>(null);
   const selectionHandledRef = useRef(false);
+  const agentResizeStartRef = useRef({ clientX: 0, width: 372 });
 
   const updateBundledPage = useCallback(
     (materialId: string, pageNumber: number, renderedPage: SlidePage) => {
@@ -1256,6 +1260,12 @@ export default function Home() {
             ? "en"
             : "vi",
         );
+        const storedAgentWidth = Number(
+          window.localStorage.getItem("vlearn-agent-panel-width"),
+        );
+        if (Number.isFinite(storedAgentWidth) && storedAgentWidth > 0) {
+          setAgentPanelWidth(Math.max(320, Math.min(680, storedAgentWidth)));
+        }
         const storedAnnotations = window.localStorage.getItem(
           "vlearn-annotations",
         );
@@ -1300,13 +1310,23 @@ export default function Home() {
       );
       window.localStorage.setItem("vlearn-language", language);
       window.localStorage.setItem(
+        "vlearn-agent-panel-width",
+        String(agentPanelWidth),
+      );
+      window.localStorage.setItem(
         "vlearn-annotations",
         JSON.stringify(annotations),
       );
     } catch {
       // The viewer still works when browser storage is unavailable.
     }
-  }, [annotations, isDark, language, preferencesReady]);
+  }, [
+    agentPanelWidth,
+    annotations,
+    isDark,
+    language,
+    preferencesReady,
+  ]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -2030,12 +2050,29 @@ export default function Home() {
     }
   }
 
+  function resizeAgentPanel(clientX: number) {
+    const delta = agentResizeStartRef.current.clientX - clientX;
+    setAgentPanelWidth(
+      Math.max(
+        320,
+        Math.min(680, agentResizeStartRef.current.width + delta),
+      ),
+    );
+  }
+
   return (
     <main
       lang={language}
       className={`app-shell ${isDark ? "theme-dark" : ""} ${
         !leftOpen ? "left-collapsed" : ""
-      } ${!rightOpen ? "right-collapsed" : ""}`}
+      } ${!rightOpen ? "right-collapsed" : ""} ${
+        isAgentResizing ? "is-resizing-agent" : ""
+      }`}
+      style={
+        {
+          "--agent-panel-width": `${agentPanelWidth}px`,
+        } as CSSProperties
+      }
     >
       <header className="topbar">
         <div className="brand">
@@ -2545,6 +2582,55 @@ export default function Home() {
       </section>
 
       <aside className="agent-panel">
+        <div
+          className="agent-resize-handle desktop-only"
+          role="separator"
+          aria-orientation="vertical"
+          aria-label={
+            language === "vi"
+              ? "Kéo để thay đổi độ rộng trợ lý"
+              : "Drag to resize the assistant"
+          }
+          aria-valuemin={320}
+          aria-valuemax={680}
+          aria-valuenow={agentPanelWidth}
+          tabIndex={0}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture(event.pointerId);
+            agentResizeStartRef.current = {
+              clientX: event.clientX,
+              width: agentPanelWidth,
+            };
+            setIsAgentResizing(true);
+          }}
+          onPointerMove={(event) => {
+            if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
+            resizeAgentPanel(event.clientX);
+          }}
+          onPointerUp={(event) => {
+            if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }
+            setIsAgentResizing(false);
+          }}
+          onPointerCancel={() => setIsAgentResizing(false)}
+          onKeyDown={(event) => {
+            if (event.key === "ArrowLeft") {
+              event.preventDefault();
+              setAgentPanelWidth((width) => Math.min(680, width + 24));
+            } else if (event.key === "ArrowRight") {
+              event.preventDefault();
+              setAgentPanelWidth((width) => Math.max(320, width - 24));
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              setAgentPanelWidth(320);
+            } else if (event.key === "End") {
+              event.preventDefault();
+              setAgentPanelWidth(680);
+            }
+          }}
+        />
         <div className="agent-header">
           <div className="agent-title">
             <span className="agent-icon">

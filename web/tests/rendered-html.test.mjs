@@ -27,6 +27,9 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /elementsFromPoint/);
   assert.match(page, /eraseAtPoint/);
   assert.match(page, /data-annotation-id/);
+  assert.match(page, /agent-resize-handle/);
+  assert.match(page, /vlearn-agent-panel-width/);
+  assert.match(styles, /--agent-panel-width/);
   assert.doesNotMatch(page, /Tìm học liệu|7 ngày/);
   assert.match(page, /handleViewerScroll/);
   assert.match(page, /activeMaterial\.pages\.map/);
