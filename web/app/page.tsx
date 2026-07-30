@@ -421,6 +421,7 @@ function AnnotationLayer({
   const [draftPoints, setDraftPoints] = useState<AnnotationPoint[]>([]);
   const [circleStart, setCircleStart] = useState<AnnotationPoint | null>(null);
   const [circleEnd, setCircleEnd] = useState<AnnotationPoint | null>(null);
+  const erasedDuringGestureRef = useRef(new Set<string>());
 
   const pointFromEvent = (event: ReactPointerEvent<HTMLDivElement>) => {
     const bounds = event.currentTarget.getBoundingClientRect();
@@ -452,6 +453,108 @@ function AnnotationLayer({
     setDraftPoints([]);
     setCircleStart(null);
     setCircleEnd(null);
+    erasedDuringGestureRef.current.clear();
+  };
+
+  const distanceToSegment = (
+    point: AnnotationPoint,
+    start: AnnotationPoint,
+    end: AnnotationPoint,
+  ) => {
+    const segmentX = end.x - start.x;
+    const segmentY = end.y - start.y;
+    const lengthSquared = segmentX * segmentX + segmentY * segmentY;
+    if (lengthSquared === 0) {
+      return Math.hypot(point.x - start.x, point.y - start.y);
+    }
+    const projection = Math.max(
+      0,
+      Math.min(
+        1,
+        ((point.x - start.x) * segmentX +
+          (point.y - start.y) * segmentY) /
+          lengthSquared,
+      ),
+    );
+    return Math.hypot(
+      point.x - (start.x + projection * segmentX),
+      point.y - (start.y + projection * segmentY),
+    );
+  };
+
+  const annotationContainsPoint = (
+    annotation: PageAnnotation,
+    point: AnnotationPoint,
+  ) => {
+    if (annotation.kind === "pen" && annotation.points) {
+      return annotation.points.some(
+        (linePoint, index) =>
+          index > 0 &&
+          distanceToSegment(point, annotation.points![index - 1], linePoint) <=
+            2.2,
+      );
+    }
+    const x = annotation.x ?? 0;
+    const y = annotation.y ?? 0;
+    const width = annotation.width ?? 0;
+    const height = annotation.height ?? 0;
+    if (annotation.kind === "circle") {
+      const radiusX = Math.max(width / 2, 0.1);
+      const radiusY = Math.max(height / 2, 0.1);
+      const normalizedDistance = Math.hypot(
+        (point.x - (x + radiusX)) / radiusX,
+        (point.y - (y + radiusY)) / radiusY,
+      );
+      const tolerance = Math.max(0.12, 2.2 / Math.min(radiusX, radiusY));
+      return Math.abs(normalizedDistance - 1) <= tolerance;
+    }
+    return (
+      point.x >= x - 1 &&
+      point.x <= x + width + 1 &&
+      point.y >= y - 1 &&
+      point.y <= y + height + 1
+    );
+  };
+
+  const eraseAtPoint = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const directAnnotationId = (
+      event.target instanceof Element
+        ? event.target.closest("[data-annotation-id]")
+        : null
+    )?.getAttribute("data-annotation-id");
+    const point = pointFromEvent(event);
+    const annotationId =
+      directAnnotationId ??
+      [...annotations]
+        .reverse()
+        .find((annotation) => annotationContainsPoint(annotation, point))?.id;
+    if (
+      annotationId &&
+      !erasedDuringGestureRef.current.has(`annotation:${annotationId}`)
+    ) {
+      erasedDuringGestureRef.current.add(`annotation:${annotationId}`);
+      onRemove(annotationId);
+      return;
+    }
+
+    const highlightedText = document
+      .elementsFromPoint(event.clientX, event.clientY)
+      .find(
+        (element) =>
+          element instanceof HTMLElement &&
+          element.matches("[data-highlightable].is-highlighted"),
+      ) as HTMLElement | undefined;
+    if (!highlightedText) return;
+    const highlightKey = `highlight:${
+      highlightedText.dataset.pdfTextId ??
+      cleanText(highlightedText.textContent ?? "")
+    }`;
+    if (erasedDuringGestureRef.current.has(highlightKey)) return;
+    erasedDuringGestureRef.current.add(highlightKey);
+    onEraseHighlight(
+      highlightedText.dataset.pdfTextId,
+      cleanText(highlightedText.textContent ?? ""),
+    );
   };
 
   const draftCircle =
@@ -469,20 +572,10 @@ function AnnotationLayer({
       className={`annotation-layer tool-${tool}`}
       onPointerDown={(event) => {
         if (tool === "eraser") {
-          const highlightedText = document
-            .elementsFromPoint(event.clientX, event.clientY)
-            .find(
-              (element) =>
-                element instanceof HTMLElement &&
-                element.matches("[data-highlightable].is-highlighted"),
-            ) as HTMLElement | undefined;
-          if (highlightedText) {
-            event.preventDefault();
-            onEraseHighlight(
-              highlightedText.dataset.pdfTextId,
-              cleanText(highlightedText.textContent ?? ""),
-            );
-          }
+          event.preventDefault();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          erasedDuringGestureRef.current.clear();
+          eraseAtPoint(event);
         } else if (tool === "pen") {
           event.currentTarget.setPointerCapture(event.pointerId);
           setDraftPoints([pointFromEvent(event)]);
@@ -504,7 +597,12 @@ function AnnotationLayer({
         }
       }}
       onPointerMove={(event) => {
-        if (tool === "pen" && draftPoints.length > 0) {
+        if (
+          tool === "eraser" &&
+          event.currentTarget.hasPointerCapture(event.pointerId)
+        ) {
+          eraseAtPoint(event);
+        } else if (tool === "pen" && draftPoints.length > 0) {
           const point = pointFromEvent(event);
           setDraftPoints((current) => [...current, point]);
         } else if (tool === "circle" && circleStart) {
@@ -528,14 +626,10 @@ function AnnotationLayer({
               <polyline
                 key={annotation.id}
                 className="annotation-pen"
+                data-annotation-id={annotation.id}
                 points={annotation.points
                   .map((point) => `${point.x},${point.y}`)
                   .join(" ")}
-                onPointerDown={(event) => {
-                  if (tool !== "eraser") return;
-                  event.stopPropagation();
-                  onRemove(annotation.id);
-                }}
               />
             );
           }
@@ -544,15 +638,11 @@ function AnnotationLayer({
               <ellipse
                 key={annotation.id}
                 className="annotation-circle"
+                data-annotation-id={annotation.id}
                 cx={(annotation.x ?? 0) + (annotation.width ?? 0) / 2}
                 cy={(annotation.y ?? 0) + (annotation.height ?? 0) / 2}
                 rx={(annotation.width ?? 0) / 2}
                 ry={(annotation.height ?? 0) / 2}
-                onPointerDown={(event) => {
-                  if (tool !== "eraser") return;
-                  event.stopPropagation();
-                  onRemove(annotation.id);
-                }}
               />
             );
           }
@@ -583,6 +673,7 @@ function AnnotationLayer({
             <div
               className="page-note"
               key={annotation.id}
+              data-annotation-id={annotation.id}
               style={{
                 left: `${annotation.x ?? 0}%`,
                 top: `${annotation.y ?? 0}%`,
@@ -590,8 +681,7 @@ function AnnotationLayer({
                 minHeight: `${annotation.height ?? 20}%`,
               }}
               onPointerDown={(event) => {
-                event.stopPropagation();
-                if (tool === "eraser") onRemove(annotation.id);
+                if (tool !== "eraser") event.stopPropagation();
               }}
             >
               <textarea
@@ -624,6 +714,7 @@ function AnnotationLayer({
                 tool === "eraser" ? "is-erasable" : ""
               }`}
               key={annotation.id}
+              data-annotation-id={annotation.id}
               style={{
                 left: `${annotation.x ?? 0}%`,
                 top: `${annotation.y ?? 0}%`,
@@ -631,8 +722,7 @@ function AnnotationLayer({
                 height: `${annotation.height ?? 30}%`,
               }}
               onPointerDown={(event) => {
-                event.stopPropagation();
-                if (tool === "eraser") onRemove(annotation.id);
+                if (tool !== "eraser") event.stopPropagation();
               }}
               aria-label={
                 tool === "eraser"
