@@ -81,6 +81,8 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /selectedLearningFocus/);
   assert.match(page, /citationPageNumber/);
   assert.match(page, /goToCitation/);
+  assert.match(page, /incorrectQuizQuestions/);
+  assert.match(page, /reviewSnippet/);
   assert.match(page, /Trang \$\{pageNumber\}/);
   assert.match(styles, /\.answer-evidence/);
   assert.match(styles, /\.evidence-citation/);
@@ -94,6 +96,7 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(styles, /\.flashcard > span[\s\S]*letter-spacing: 0/);
   assert.match(styles, /\.personal-notebook/);
   assert.match(styles, /\.learning-save-button/);
+  assert.match(styles, /\.quiz-review-list/);
   assert.match(styles, /\.annotation-layer/);
   assert.match(styles, /\.page-note/);
   assert.match(styles, /\.page-image/);

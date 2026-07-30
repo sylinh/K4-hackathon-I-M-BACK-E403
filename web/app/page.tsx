@@ -2055,6 +2055,14 @@ export default function Home() {
     (total, answer, index) => total + (answer === quiz[index]?.answer ? 1 : 0),
     0,
   );
+  const incorrectQuizQuestions = quiz
+    .map((item, index) => ({ item, index }))
+    .filter(({ item, index }) => quizAnswers[index] !== item.answer);
+
+  function reviewSnippet(text: string) {
+    const summary = cleanText(text);
+    return summary.length > 180 ? `${summary.slice(0, 177).trimEnd()}…` : summary;
+  }
 
   function toggleCard(index: number) {
     setFlippedCards((current) =>
@@ -3177,6 +3185,27 @@ export default function Home() {
                     <span>Cần ôn lại</span>
                   </div>
                 </div>
+                {incorrectQuizQuestions.length > 0 && (
+                  <section className="quiz-review-list" aria-label="Câu cần xem lại">
+                    <h4>Cần xem lại</h4>
+                    {incorrectQuizQuestions.map(({ item, index }) => (
+                      <article key={`${item.question}-${index}`}>
+                        <span>Câu {index + 1}</span>
+                        <strong>{item.question}</strong>
+                        <p>{reviewSnippet(item.explain)}</p>
+                        {item.citation && (
+                          <button
+                            type="button"
+                            onClick={() => goToCitation(item.citation!)}
+                            disabled={!citationPageNumber(item.citation)}
+                          >
+                            <FileText size={13} /> {citationLabel(item.citation)}
+                          </button>
+                        )}
+                      </article>
+                    ))}
+                  </section>
+                )}
                 <button className="primary-action" onClick={resetQuiz}>
                   <RotateCcw size={16} /> Làm lại quiz
                 </button>
