@@ -20,9 +20,14 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /activeMaterial\.pages\.map/);
   assert.match(page, /Cuộn liên tục/);
   assert.match(page, /data-page-index/);
-  assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.9\)/);
+  assert.match(page, /URL\.createObjectURL\(file\)/);
+  assert.match(page, /<PdfCanvasPage/);
+  assert.match(page, /window\.devicePixelRatio/);
+  assert.match(page, /const pageCount = pdf\.numPages/);
+  assert.doesNotMatch(page, /canvas\.toDataURL/);
+  assert.doesNotMatch(page, /Math\.min\(pdf\.numPages,\s*60\)/);
   assert.match(page, /pdf-text-layer/);
-  assert.match(page, /previewDataUrl/);
+  assert.match(page, /pdfSourceUrl/);
   assert.doesNotMatch(page, /className="viewer-footer"/);
   assert.match(page, /Tạo quiz/);
   assert.match(page, /Tạo flashcard/);
@@ -53,6 +58,7 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /fallbackAnswer/);
   assert.match(materialRoute, /20 \* 1024 \* 1024/);
   assert.match(materialRoute, /MATERIALS\.put/);
+  assert.match(materialRoute, /await file\.arrayBuffer\(\)/);
   assert.ok(distEntries.includes("client"));
   assert.ok(distEntries.includes("server"));
   await assert.rejects(access(new URL("app/_sites-preview/SkeletonPreview.tsx", root)));

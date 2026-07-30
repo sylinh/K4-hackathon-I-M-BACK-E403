@@ -713,13 +713,34 @@ input:focus-visible {
   background: #ffffff;
 }
 
-.pdf-native-page > img {
+.pdf-canvas-surface {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.pdf-canvas-surface > canvas {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: contain;
   pointer-events: none;
   user-select: none;
+}
+
+.pdf-render-error {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 24px;
+  background: #ffffff;
+  color: #8b2f24;
+  font-size: 12px;
+  text-align: center;
 }
 
 .pdf-text-layer {
