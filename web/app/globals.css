@@ -2095,7 +2095,7 @@ input:focus-visible {
   outline: 0;
   background: transparent;
   color: var(--ink);
-  font-size: 10px;
+  font-size: 15px;
   line-height: 1.5;
 }
 

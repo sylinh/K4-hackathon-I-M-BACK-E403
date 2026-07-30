@@ -11,6 +11,8 @@ type ResponseLanguage = "vi" | "en";
 
 type AgentRequest = {
   mode?: AgentMode;
+  /** Number of learning items requested; ignored for chat. */
+  count?: number;
   question?: string;
   context?: string;
   page?: number;
@@ -556,9 +558,13 @@ function fallbackChat(
   };
 }
 
-function fallbackQuiz(chunks: TranscriptChunk[], language: ResponseLanguage) {
+function fallbackQuiz(
+  chunks: TranscriptChunk[],
+  language: ResponseLanguage,
+  count: number,
+) {
   if (chunks.length === 0) return [];
-  return Array.from({ length: QUIZ_COUNT }, (_, index) => {
+  return Array.from({ length: count }, (_, index) => {
     const chunk = chunks[index % chunks.length];
     const answer = compact(chunk.text, 150);
     return {
@@ -595,9 +601,10 @@ function fallbackQuiz(chunks: TranscriptChunk[], language: ResponseLanguage) {
 function fallbackFlashcards(
   chunks: TranscriptChunk[],
   language: ResponseLanguage,
+  count: number,
 ) {
   if (chunks.length === 0) return [];
-  return Array.from({ length: FLASHCARD_COUNT }, (_, index) => {
+  return Array.from({ length: count }, (_, index) => {
     const chunk = chunks[index % chunks.length];
     return {
       front:
@@ -624,6 +631,7 @@ function promptForMode(
     pageCount: number;
     language: ResponseLanguage;
     excludeLearningItems: string[];
+    count: number;
   },
 ) {
   const scopeDirection =
@@ -692,14 +700,14 @@ ${sources}
   if (mode === "quiz") {
     return `${common}
 
-Tạo đúng ${QUIZ_COUNT} câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Trả về JSON thuần:
+ Tạo đúng ${options.count} câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Trả về JSON thuần:
 {"quiz":[{"question":"...","options":["...","...","...","..."],"answer":0,"explain":"...","citation":"${citationFormat}"}]}
 answer là chỉ số 0-3. Mỗi câu chỉ có một đáp án đúng và không dùng phương án vô lý.`;
   }
   if (mode === "flashcards") {
     return `${common}
 
-Tạo ${FLASHCARD_COUNT} thẻ nhớ ngắn gọn. Trả về JSON thuần:
+ Tạo đúng ${options.count} thẻ nhớ ngắn gọn. Trả về JSON thuần:
 {"flashcards":[{"front":"...","back":"...","citation":"${citationFormat}"}]}`;
   }
   return `${common}
@@ -713,7 +721,7 @@ Trả về JSON thuần:
 evidence và citations phải là mảng rỗng khi không đủ thông tin hoặc đang yêu cầu làm rõ. note là chuỗi rỗng khi không có mâu thuẫn, ngoại lệ hay thông tin còn thiếu.`;
 }
 
-function schemaForMode(mode: AgentMode) {
+function schemaForMode(mode: AgentMode, count: number) {
   const citation = {
     type: "string",
     description: "Mã nguồn có trong prompt, dạng Txx-xxx hoặc Pxxx.",
@@ -724,8 +732,8 @@ function schemaForMode(mode: AgentMode) {
       properties: {
         quiz: {
           type: "array",
-          minItems: QUIZ_COUNT,
-          maxItems: QUIZ_COUNT,
+            minItems: count,
+            maxItems: count,
           items: {
             type: "object",
             properties: {
@@ -753,8 +761,8 @@ function schemaForMode(mode: AgentMode) {
       properties: {
         flashcards: {
           type: "array",
-          minItems: FLASHCARD_COUNT,
-          maxItems: FLASHCARD_COUNT,
+            minItems: count,
+            maxItems: count,
           items: {
             type: "object",
             properties: {
@@ -869,7 +877,7 @@ function moveToNextGeminiKey(keyIndex: number, keyCount: number) {
   activeGeminiKeyIndex = (keyIndex + 1) % keyCount;
 }
 
-async function callGemini(prompt: string, mode: AgentMode) {
+async function callGemini(prompt: string, mode: AgentMode, count: number) {
   const runtimeEnv = env as unknown as GeminiRuntimeEnv;
   const apiKeys = geminiApiKeys(runtimeEnv);
   if (apiKeys.length === 0) return null;
@@ -891,7 +899,7 @@ async function callGemini(prompt: string, mode: AgentMode) {
             contents: [{ role: "user", parts: [{ text: prompt }] }],
             generationConfig: {
               responseMimeType: "application/json",
-              responseJsonSchema: schemaForMode(mode),
+              responseJsonSchema: schemaForMode(mode, count),
               maxOutputTokens: 3200,
               thinkingConfig: {
                 thinkingLevel: "minimal",
@@ -959,6 +967,13 @@ export async function POST(request: Request) {
   try {
     const payload = (await request.json()) as AgentRequest;
     const mode = payload.mode ?? "chat";
+    const requestedCount = Number(payload.count);
+    const learningCount =
+      Number.isInteger(requestedCount) && requestedCount >= 1 && requestedCount <= 20
+        ? requestedCount
+        : mode === "quiz"
+          ? QUIZ_COUNT
+          : FLASHCARD_COUNT;
     const materialId = payload.materialId?.trim() ?? "";
     const material = payload.material?.trim() || "Tài liệu đang mở";
     const question = payload.question?.trim() ?? "";
@@ -1028,17 +1043,18 @@ export async function POST(request: Request) {
         focus,
         page,
         pageCount,
-        language,
-        excludeLearningItems,
-      },
-    );
-    const liveResult = await callGemini(prompt, mode);
+          language,
+          excludeLearningItems,
+          count: learningCount,
+        },
+      );
+    const liveResult = await callGemini(prompt, mode, learningCount);
     const primaryIds = new Set(primaryChunks.map((chunk) => chunk.id));
 
     if (mode === "quiz") {
       const quiz =
         Array.isArray(liveResult?.quiz) &&
-        liveResult.quiz.length === QUIZ_COUNT &&
+        liveResult.quiz.length === learningCount &&
         liveResult.quiz.every(
           (item) =>
             item &&
@@ -1046,14 +1062,14 @@ export async function POST(request: Request) {
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
         )
-          ? liveResult.quiz.slice(0, QUIZ_COUNT)
-          : fallbackQuiz(primaryChunks, language);
+          ? liveResult.quiz.slice(0, learningCount)
+          : fallbackQuiz(primaryChunks, language, learningCount);
       return Response.json({ quiz, live: Boolean(liveResult) });
     }
     if (mode === "flashcards") {
       const flashcards =
         Array.isArray(liveResult?.flashcards) &&
-        liveResult.flashcards.length === FLASHCARD_COUNT &&
+        liveResult.flashcards.length === learningCount &&
         liveResult.flashcards.every(
           (item) =>
             item &&
@@ -1061,8 +1077,8 @@ export async function POST(request: Request) {
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
         )
-          ? liveResult.flashcards.slice(0, FLASHCARD_COUNT)
-          : fallbackFlashcards(primaryChunks, language);
+          ? liveResult.flashcards.slice(0, learningCount)
+          : fallbackFlashcards(primaryChunks, language, learningCount);
       return Response.json({ flashcards, live: Boolean(liveResult) });
     }
 
@@ -1073,11 +1089,18 @@ export async function POST(request: Request) {
       context,
       language,
     );
-    const allowedIds = new Set(chunks.map((chunk) => chunk.id));
+    // The selected slide is the authoritative chat source. Transcript chunks
+    // can help retrieval, but must never be exposed as citations to users.
     const liveCitations = Array.isArray(liveResult?.citations)
       ? liveResult.citations.filter(
           (citation): citation is string =>
-            typeof citation === "string" && allowedIds.has(citation),
+            typeof citation === "string" && primaryIds.has(citation),
+        )
+      : [];
+    const liveSources = Array.isArray(liveResult?.sources)
+      ? liveResult.sources.filter(
+          (source): source is string =>
+            typeof source === "string" && primaryIds.has(source),
         )
       : [];
     const liveEvidence = Array.isArray(liveResult?.evidence)
@@ -1088,7 +1111,7 @@ export async function POST(request: Request) {
           if (typeof claim !== "string" || typeof citation !== "string") {
             return [];
           }
-          const citedId = [...allowedIds].find((id) => citation.includes(id));
+          const citedId = [...primaryIds].find((id) => citation.includes(id));
           return citedId
             ? [{ claim, citation: `${material}, ${citedId}` }]
             : [];
@@ -1104,10 +1127,7 @@ export async function POST(request: Request) {
     const groundedLiveResult =
       typeof liveResult?.answer === "string" &&
       (isInsufficient ||
-        (liveCitations.some((citation) => primaryIds.has(citation)) &&
-          liveEvidence.some((item) =>
-            [...primaryIds].some((id) => item.citation.includes(id)),
-          )));
+        (liveCitations.length > 0 && liveEvidence.length > 0));
     if (liveResult && groundedLiveResult && isInsufficient) {
       const missing =
         typeof liveResult.note === "string" && liveResult.note.trim()
@@ -1132,8 +1152,8 @@ export async function POST(request: Request) {
           ? liveResult.reasoning
           : fallback.reasoning,
       sources:
-        groundedLiveResult && Array.isArray(liveResult?.sources)
-          ? liveResult.sources
+        groundedLiveResult && liveSources.length > 0
+          ? liveSources
           : fallback.sources,
       evidence: groundedLiveResult ? liveEvidence : fallback.evidence,
       confidence: groundedLiveResult ? confidence : fallback.confidence,

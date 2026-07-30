@@ -43,7 +43,7 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /ContextScope/);
   assert.match(page, /Slide đang xem/);
   assert.match(page, /"Toàn bộ"/);
-  assert.match(page, /Tải một tài liệu khác/);
+  assert.doesNotMatch(page, /className="attach-button"/);
   assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.86\)/);
   assert.match(page, /new Uint8Array\(await file\.arrayBuffer\(\)\)/);
   assert.match(page, /source\.data\.slice\(\)/);
@@ -173,10 +173,10 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /language: ResponseLanguage/);
   assert.match(agentRoute, /fallbackQuiz/);
   assert.match(agentRoute, /const QUIZ_COUNT = 15/);
-  assert.match(agentRoute, /liveResult\.quiz\.length === QUIZ_COUNT/);
+  assert.match(agentRoute, /liveResult\.quiz\.length === learningCount/);
   assert.match(agentRoute, /fallbackFlashcards/);
   assert.match(agentRoute, /const FLASHCARD_COUNT = 20/);
-  assert.match(agentRoute, /liveResult\.flashcards\.length === FLASHCARD_COUNT/);
+  assert.match(agentRoute, /liveResult\.flashcards\.length === learningCount/);
   assert.match(agentRoute, /NỘI DUNG ĐÃ LƯU/);
   assert.match(agentRoute, /excludeLearningItems\?: string\[\]/);
   assert.match(materialRoute, /20 \* 1024 \* 1024/);

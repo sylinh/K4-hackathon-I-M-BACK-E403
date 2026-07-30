@@ -3087,26 +3087,9 @@ export default function Home() {
                       ? "Hỏi trên toàn bộ tài liệu…"
                       : "Ask across the full document…"
                 }
-                rows={2}
+                rows={1}
               />
               <div className="composer-footer">
-                <button
-                  type="button"
-                  className="attach-button"
-                  onClick={() => inputRef.current?.click()}
-                  aria-label={
-                    language === "vi"
-                      ? "Tải một tài liệu khác"
-                      : "Upload another document"
-                  }
-                  title={
-                    language === "vi"
-                      ? "Tải một tài liệu khác"
-                      : "Upload another document"
-                  }
-                >
-                  <Paperclip size={16} />
-                </button>
                 <span>{sourceScopeLabel}</span>
                 <button
                   className="send-button"

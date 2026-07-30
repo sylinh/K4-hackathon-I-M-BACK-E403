@@ -27,7 +27,30 @@ const resultsDir = resolve(evalDir, "results");
 const versionResultsDir = resolve(resultsDir, suiteVersion);
 const baseUrl = process.env.EVAL_BASE_URL || "http://localhost:3000";
 const delayMs = Number(process.env.EVAL_DELAY_MS || 900);
-const suite = JSON.parse(await readFile(suitePath, "utf8"));
+async function loadSuite(version) {
+  const definition = JSON.parse(
+    await readFile(resolve(evalDir, "suites", `${version}.json`), "utf8"),
+  );
+  if (definition.baseVersion && !/^[a-z0-9][a-z0-9-]*$/.test(definition.baseVersion)) {
+    throw new Error(`Base eval version khong hop le: ${definition.baseVersion}`);
+  }
+  const baseSuite = definition.baseVersion
+    ? await loadSuite(definition.baseVersion)
+    : null;
+  return baseSuite
+    ? {
+        ...baseSuite,
+        ...definition,
+        cases: [...baseSuite.cases, ...(definition.cases ?? [])],
+        goldenSetFile: definition.goldenSetFile ?? baseSuite.goldenSetFile,
+        primaryCitationPrefix:
+          definition.primaryCitationPrefix ?? baseSuite.primaryCitationPrefix,
+        qualityBar: definition.qualityBar ?? baseSuite.qualityBar,
+      }
+    : definition;
+}
+
+const suite = await loadSuite(suiteVersion);
 
 if (suite.version !== suiteVersion) {
   throw new Error(
@@ -367,6 +390,28 @@ function evaluate(testCase, status, actual) {
         (term) => !actualText.includes(normalize(term)),
       ),
       expected.mustNotMentionAny.join(" | "),
+    );
+  }
+  if (expected.responseLanguage === "vi") {
+    const vietnameseSignals = [
+      "la",
+      "va",
+      "cua",
+      "trong",
+      "duoc",
+      "khong",
+      "nguon",
+      "tai lieu",
+      "slide",
+    ];
+    const matchedSignals = vietnameseSignals.filter((signal) =>
+      actualText.includes(signal),
+    );
+    addCheck(
+      checks,
+      "response-language-vi",
+      matchedSignals.length >= 2,
+      `Phan hoi can dung tieng Viet; nhan: ${matchedSignals.join(", ") || "none"}.`,
     );
   }
 
