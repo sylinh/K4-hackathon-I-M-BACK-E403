@@ -365,6 +365,13 @@ function cleanText(value: string) {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function learningItemKey(value: string) {
+  return cleanText(value)
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
 function typeFromFile(file: File): Material["type"] {
   const extension = file.name.split(".").pop()?.toLowerCase();
   if (extension === "pptx") return "PPTX";
@@ -1926,6 +1933,18 @@ export default function Home() {
     setLearningLive(false);
     try {
       const context = await selectedSourceContext();
+      const savedItemKeys = new Set(
+        savedLearningSets
+          .filter((savedSet) => savedSet.materialId === activeMaterial.id)
+          .flatMap((savedSet) =>
+            mode === "quiz"
+              ? savedSet.quiz?.map((item) => item.question) ?? []
+              : savedSet.flashcards?.map((item) => item.front) ?? [],
+          )
+          .map(learningItemKey)
+          .filter(Boolean),
+      );
+      const excludeLearningItems = Array.from(savedItemKeys).slice(0, 80);
       const response = await fetch("/api/agent", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -1943,6 +1962,7 @@ export default function Home() {
           pageCount: activeMaterial.pages.length,
           materialId: activeMaterial.id,
           material: activeMaterial.name,
+          excludeLearningItems,
         }),
       });
       const result = (await response.json()) as {
@@ -1953,10 +1973,30 @@ export default function Home() {
       };
       if (!response.ok) throw new Error(result.error || "agent");
       if (mode === "quiz" && Array.isArray(result.quiz)) {
-        setGeneratedQuiz(result.quiz);
+        const seen = new Set(savedItemKeys);
+        const uniqueQuiz = result.quiz.filter((item) => {
+          const key = learningItemKey(item.question);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setGeneratedQuiz(uniqueQuiz);
+        if (uniqueQuiz.length < result.quiz.length) {
+          setToast("Đã bỏ các câu Quiz trùng với Sổ tay cá nhân");
+        }
       }
       if (mode === "flashcards" && Array.isArray(result.flashcards)) {
-        setGeneratedFlashcards(result.flashcards);
+        const seen = new Set(savedItemKeys);
+        const uniqueFlashcards = result.flashcards.filter((item) => {
+          const key = learningItemKey(item.front);
+          if (!key || seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+        setGeneratedFlashcards(uniqueFlashcards);
+        if (uniqueFlashcards.length < result.flashcards.length) {
+          setToast("Đã bỏ các Flashcard trùng với Sổ tay cá nhân");
+        }
       }
       setLearningLive(Boolean(result.live));
     } catch {
@@ -1994,6 +2034,25 @@ export default function Home() {
   function saveLearningSet(kind: "quiz" | "flashcards") {
     const hasContent = kind === "quiz" ? quiz.length > 0 : flashcards.length > 0;
     if (!hasContent) return;
+    const candidateItems =
+      kind === "quiz" ? quiz.map((item) => item.question) : flashcards.map((item) => item.front);
+    const savedItemKeys = new Set(
+      savedLearningSets
+        .filter(
+          (savedSet) =>
+            savedSet.materialId === activeMaterial.id && savedSet.kind === kind,
+        )
+        .flatMap((savedSet) =>
+          kind === "quiz"
+            ? savedSet.quiz?.map((item) => item.question) ?? []
+            : savedSet.flashcards?.map((item) => item.front) ?? [],
+        )
+        .map(learningItemKey),
+    );
+    if (candidateItems.every((item) => savedItemKeys.has(learningItemKey(item)))) {
+      setToast("Nội dung này đã có trong Sổ tay cá nhân");
+      return;
+    }
     const savedSet: SavedLearningSet = {
       id: `learning-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       kind,

@@ -20,6 +20,7 @@ type AgentRequest = {
   scope?: SourceScope;
   focus?: string;
   language?: ResponseLanguage;
+  excludeLearningItems?: string[];
 };
 
 type TranscriptChunk = {
@@ -603,6 +604,7 @@ function promptForMode(
     page: number;
     pageCount: number;
     language: ResponseLanguage;
+    excludeLearningItems: string[];
   },
 ) {
   const scopeDirection =
@@ -656,6 +658,13 @@ ${compact(pageContext, 7000)}
 
 TRỌNG TÂM NGƯỜI HỌC ĐÃ BÔI SÁNG:
 ${options.focus ? compact(options.focus, 2400) : "Không có; bám theo câu hỏi."}
+
+${
+  options.excludeLearningItems.length > 0
+    ? `NỘI DUNG ĐÃ LƯU (không được tạo lại hay diễn đạt gần như trùng lặp):
+${options.excludeLearningItems.map((item) => `- ${item}`).join("\n")}`
+    : ""
+}
 
 <TAI_LIEU>
 ${sources}
@@ -925,6 +934,13 @@ export async function POST(request: Request) {
     const question = payload.question?.trim() ?? "";
     const context = payload.context?.trim() ?? "";
     const focus = payload.focus?.trim() ?? "";
+    const excludeLearningItems = Array.isArray(payload.excludeLearningItems)
+      ? payload.excludeLearningItems
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => compact(item, 120))
+          .filter(Boolean)
+          .slice(0, 80)
+      : [];
     const language: ResponseLanguage =
       payload.language === "en" ? "en" : "vi";
     const scope: SourceScope =
@@ -986,6 +1002,7 @@ export async function POST(request: Request) {
         page,
         pageCount,
         language,
+        excludeLearningItems,
       },
     );
     const liveResult = await callGemini(prompt, mode);

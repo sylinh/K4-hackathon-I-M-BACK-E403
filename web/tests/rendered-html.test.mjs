@@ -63,6 +63,8 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /vlearn-personal-notebook/);
   assert.match(page, /saveLearningSet/);
   assert.match(page, /openSavedLearningSet/);
+  assert.match(page, /excludeLearningItems/);
+  assert.match(page, /learningItemKey/);
   assert.match(page, /day-1-foundation/);
   assert.match(page, /day-2-product/);
   assert.match(page, /d1-slide-hackathon\.pdf/);
@@ -175,6 +177,8 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /fallbackFlashcards/);
   assert.match(agentRoute, /const FLASHCARD_COUNT = 20/);
   assert.match(agentRoute, /liveResult\.flashcards\.length === FLASHCARD_COUNT/);
+  assert.match(agentRoute, /NỘI DUNG ĐÃ LƯU/);
+  assert.match(agentRoute, /excludeLearningItems\?: string\[\]/);
   assert.match(materialRoute, /20 \* 1024 \* 1024/);
   assert.match(materialRoute, /MATERIALS\.put/);
   assert.match(materialRoute, /await file\.arrayBuffer\(\)/);
