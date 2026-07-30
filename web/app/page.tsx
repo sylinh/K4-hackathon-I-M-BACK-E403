@@ -491,7 +491,8 @@ function AnnotationLayer({
       }}
       onPointerMove={(event) => {
         if (tool === "pen" && draftPoints.length > 0) {
-          setDraftPoints((current) => [...current, pointFromEvent(event)]);
+          const point = pointFromEvent(event);
+          setDraftPoints((current) => [...current, point]);
         } else if (tool === "circle" && circleStart) {
           setCircleEnd(pointFromEvent(event));
         }
