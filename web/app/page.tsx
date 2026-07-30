@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BookOpen,
   Bot,
+  Circle,
   Check,
   CheckCircle2,
   ChevronDown,
@@ -11,24 +12,30 @@ import {
   CircleHelp,
   FileText,
   Highlighter,
+  ImagePlus,
   Layers3,
   Menu,
   MessageCircle,
   Minus,
   Moon,
   MoreHorizontal,
+  MousePointer2,
   PanelLeftClose,
   PanelRightClose,
   Paperclip,
+  Pencil,
   Plus,
   RotateCcw,
   Search,
   Send,
   Sparkles,
+  StickyNote,
   Sun,
+  Trash2,
   Upload,
   X,
   Zap,
+  Eraser,
 } from "lucide-react";
 import JSZip from "jszip";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
@@ -37,6 +44,7 @@ import {
   DragEvent,
   FormEvent,
   MouseEvent,
+  PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -119,6 +127,34 @@ type Flashcard = {
 
 type AgentTab = "chat" | "quiz" | "flashcards";
 type ContextScope = "current-page" | "all-document";
+type InterfaceLanguage = "vi" | "en";
+type ViewerTool =
+  | "read"
+  | "highlight"
+  | "pen"
+  | "circle"
+  | "note"
+  | "image"
+  | "eraser";
+
+type AnnotationPoint = {
+  x: number;
+  y: number;
+};
+
+type PageAnnotation = {
+  id: string;
+  materialId: string;
+  pageIndex: number;
+  kind: "pen" | "circle" | "note" | "image";
+  points?: AnnotationPoint[];
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  text?: string;
+  imageUrl?: string;
+};
 
 const accentOrder: SlidePage["accent"][] = ["blue", "coral", "mint", "amber"];
 
@@ -310,8 +346,8 @@ const initialMessages: ChatMessage[] = [
   {
     id: 1,
     role: "assistant",
-    text: "Mình chỉ trả lời từ slide và transcript đã liên kết với đúng buổi học đang mở. Hãy chọn một đoạn hoặc đặt câu hỏi về trang hiện tại.",
-    citation: "Day 1 · Transcript T04",
+    text: "Mình lấy slide đang mở làm nguồn trả lời chính; transcript chỉ bổ sung cách diễn giải khi cùng ngữ cảnh. Hãy chọn một đoạn hoặc đặt câu hỏi về trang hiện tại.",
+    citation: "Day 1 · Slide PDF",
   },
 ];
 
@@ -364,6 +400,242 @@ function makePage(
     kind,
     aspectRatio,
   };
+}
+
+function AnnotationLayer({
+  annotations,
+  tool,
+  language,
+  onAdd,
+  onUpdate,
+  onRemove,
+}: {
+  annotations: PageAnnotation[];
+  tool: ViewerTool;
+  language: InterfaceLanguage;
+  onAdd: (
+    annotation: Omit<PageAnnotation, "id" | "materialId" | "pageIndex">,
+  ) => void;
+  onUpdate: (id: string, text: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [draftPoints, setDraftPoints] = useState<AnnotationPoint[]>([]);
+  const [circleStart, setCircleStart] = useState<AnnotationPoint | null>(null);
+  const [circleEnd, setCircleEnd] = useState<AnnotationPoint | null>(null);
+
+  const pointFromEvent = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    return {
+      x: Math.max(
+        0,
+        Math.min(100, ((event.clientX - bounds.left) / bounds.width) * 100),
+      ),
+      y: Math.max(
+        0,
+        Math.min(100, ((event.clientY - bounds.top) / bounds.height) * 100),
+      ),
+    };
+  };
+
+  const finishDrawing = () => {
+    if (tool === "pen" && draftPoints.length > 1) {
+      onAdd({ kind: "pen", points: draftPoints });
+    }
+    if (tool === "circle" && circleStart && circleEnd) {
+      const x = Math.min(circleStart.x, circleEnd.x);
+      const y = Math.min(circleStart.y, circleEnd.y);
+      const width = Math.abs(circleEnd.x - circleStart.x);
+      const height = Math.abs(circleEnd.y - circleStart.y);
+      if (width > 1 && height > 1) {
+        onAdd({ kind: "circle", x, y, width, height });
+      }
+    }
+    setDraftPoints([]);
+    setCircleStart(null);
+    setCircleEnd(null);
+  };
+
+  const draftCircle =
+    circleStart && circleEnd
+      ? {
+          x: Math.min(circleStart.x, circleEnd.x),
+          y: Math.min(circleStart.y, circleEnd.y),
+          width: Math.abs(circleEnd.x - circleStart.x),
+          height: Math.abs(circleEnd.y - circleStart.y),
+        }
+      : null;
+
+  return (
+    <div
+      className={`annotation-layer tool-${tool}`}
+      onPointerDown={(event) => {
+        if (tool === "pen") {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setDraftPoints([pointFromEvent(event)]);
+        } else if (tool === "circle") {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          const point = pointFromEvent(event);
+          setCircleStart(point);
+          setCircleEnd(point);
+        } else if (tool === "note") {
+          const point = pointFromEvent(event);
+          onAdd({
+            kind: "note",
+            x: point.x,
+            y: point.y,
+            width: 26,
+            height: 20,
+            text: "",
+          });
+        }
+      }}
+      onPointerMove={(event) => {
+        if (tool === "pen" && draftPoints.length > 0) {
+          setDraftPoints((current) => [...current, pointFromEvent(event)]);
+        } else if (tool === "circle" && circleStart) {
+          setCircleEnd(pointFromEvent(event));
+        }
+      }}
+      onPointerUp={finishDrawing}
+      onPointerCancel={finishDrawing}
+      aria-label={
+        language === "vi" ? "Lớp ghi chú trên trang" : "Page annotation layer"
+      }
+    >
+      <svg
+        className="annotation-svg"
+        viewBox="0 0 100 100"
+        preserveAspectRatio="none"
+      >
+        {annotations.map((annotation) => {
+          if (annotation.kind === "pen" && annotation.points) {
+            return (
+              <polyline
+                key={annotation.id}
+                className="annotation-pen"
+                points={annotation.points
+                  .map((point) => `${point.x},${point.y}`)
+                  .join(" ")}
+                onPointerDown={(event) => {
+                  if (tool !== "eraser") return;
+                  event.stopPropagation();
+                  onRemove(annotation.id);
+                }}
+              />
+            );
+          }
+          if (annotation.kind === "circle") {
+            return (
+              <ellipse
+                key={annotation.id}
+                className="annotation-circle"
+                cx={(annotation.x ?? 0) + (annotation.width ?? 0) / 2}
+                cy={(annotation.y ?? 0) + (annotation.height ?? 0) / 2}
+                rx={(annotation.width ?? 0) / 2}
+                ry={(annotation.height ?? 0) / 2}
+                onPointerDown={(event) => {
+                  if (tool !== "eraser") return;
+                  event.stopPropagation();
+                  onRemove(annotation.id);
+                }}
+              />
+            );
+          }
+          return null;
+        })}
+        {draftPoints.length > 1 && (
+          <polyline
+            className="annotation-pen is-draft"
+            points={draftPoints
+              .map((point) => `${point.x},${point.y}`)
+              .join(" ")}
+          />
+        )}
+        {draftCircle && (
+          <ellipse
+            className="annotation-circle is-draft"
+            cx={draftCircle.x + draftCircle.width / 2}
+            cy={draftCircle.y + draftCircle.height / 2}
+            rx={draftCircle.width / 2}
+            ry={draftCircle.height / 2}
+          />
+        )}
+      </svg>
+
+      {annotations.map((annotation) => {
+        if (annotation.kind === "note") {
+          return (
+            <div
+              className="page-note"
+              key={annotation.id}
+              style={{
+                left: `${annotation.x ?? 0}%`,
+                top: `${annotation.y ?? 0}%`,
+                width: `${annotation.width ?? 26}%`,
+                minHeight: `${annotation.height ?? 20}%`,
+              }}
+              onPointerDown={(event) => event.stopPropagation()}
+            >
+              <textarea
+                value={annotation.text ?? ""}
+                onChange={(event) => onUpdate(annotation.id, event.target.value)}
+                placeholder={language === "vi" ? "Ghi chú…" : "Note…"}
+                aria-label={
+                  language === "vi" ? "Nội dung ghi chú" : "Note content"
+                }
+              />
+              <button
+                type="button"
+                onClick={() => onRemove(annotation.id)}
+                aria-label={
+                  language === "vi" ? "Xóa ghi chú" : "Delete note"
+                }
+                title={language === "vi" ? "Xóa ghi chú" : "Delete note"}
+              >
+                <X size={11} />
+              </button>
+            </div>
+          );
+        }
+        if (annotation.kind === "image" && annotation.imageUrl) {
+          return (
+            <button
+              type="button"
+              className={`page-image ${
+                tool === "eraser" ? "is-erasable" : ""
+              }`}
+              key={annotation.id}
+              style={{
+                left: `${annotation.x ?? 0}%`,
+                top: `${annotation.y ?? 0}%`,
+                width: `${annotation.width ?? 36}%`,
+                height: `${annotation.height ?? 30}%`,
+              }}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                if (tool === "eraser") onRemove(annotation.id);
+              }}
+              aria-label={
+                tool === "eraser"
+                  ? language === "vi"
+                    ? "Xóa ảnh"
+                    : "Delete image"
+                  : language === "vi"
+                    ? "Ảnh ghi chú"
+                    : "Annotation image"
+              }
+            >
+              <span
+                className="page-image-content"
+                style={{ backgroundImage: `url("${annotation.imageUrl}")` }}
+              />
+            </button>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
 }
 
 type PdfJsModule = typeof import("pdfjs-dist");
@@ -780,8 +1052,9 @@ export default function Home() {
   );
   const [pageIndex, setPageIndex] = useState(0);
   const [zoom, setZoom] = useState(100);
-  const [highlightMode, setHighlightMode] = useState(true);
+  const [viewerTool, setViewerTool] = useState<ViewerTool>("highlight");
   const [highlightEntries, setHighlightEntries] = useState<HighlightEntry[]>([]);
+  const [annotations, setAnnotations] = useState<PageAnnotation[]>([]);
   const [messages, setMessages] = useState(initialMessages);
   const [question, setQuestion] = useState("");
   const [agentTab, setAgentTab] = useState<AgentTab>("chat");
@@ -794,6 +1067,8 @@ export default function Home() {
   const [showPaste, setShowPaste] = useState(false);
   const [pasteValue, setPasteValue] = useState("");
   const [isDark, setIsDark] = useState(false);
+  const [language, setLanguage] = useState<InterfaceLanguage>("vi");
+  const [preferencesReady, setPreferencesReady] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true);
   const [rightOpen, setRightOpen] = useState(true);
   const [quizIndex, setQuizIndex] = useState(0);
@@ -807,6 +1082,7 @@ export default function Home() {
   const [learningLive, setLearningLive] = useState(false);
   const [toast, setToast] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
+  const annotationImageRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<HTMLDivElement>(null);
   const selectionHandledRef = useRef(false);
@@ -841,6 +1117,7 @@ export default function Home() {
   const activeMaterial =
     materials.find((material) => material.id === activeMaterialId) ?? materials[0];
   const page = activeMaterial.pages[pageIndex] ?? activeMaterial.pages[0];
+  const highlightMode = viewerTool === "highlight";
   const highlights = useMemo(
     () => highlightEntries.map((entry) => entry.text),
     [highlightEntries],
@@ -854,6 +1131,47 @@ export default function Home() {
   );
   const quiz = generatedQuiz;
   const flashcards = generatedFlashcards;
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      try {
+        setIsDark(window.localStorage.getItem("vlearn-theme") === "dark");
+        setLanguage(
+          window.localStorage.getItem("vlearn-language") === "en"
+            ? "en"
+            : "vi",
+        );
+        const storedAnnotations = window.localStorage.getItem(
+          "vlearn-annotations",
+        );
+        if (storedAnnotations) {
+          setAnnotations(JSON.parse(storedAnnotations) as PageAnnotation[]);
+        }
+      } catch {
+        // Device preferences remain optional.
+      } finally {
+        setPreferencesReady(true);
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    try {
+      window.localStorage.setItem(
+        "vlearn-theme",
+        isDark ? "dark" : "light",
+      );
+      window.localStorage.setItem("vlearn-language", language);
+      window.localStorage.setItem(
+        "vlearn-annotations",
+        JSON.stringify(annotations),
+      );
+    } catch {
+      // The viewer still works when browser storage is unavailable.
+    }
+  }, [annotations, isDark, language, preferencesReady]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -881,7 +1199,7 @@ export default function Home() {
         id: Date.now(),
         role: "assistant",
         text: `Đã chọn “${material.name}”. Bạn có thể hỏi theo slide đang xem hoặc toàn bộ tài liệu.`,
-        citation: material.transcriptLabel ?? "Tài liệu tải lên",
+        citation: `${material.type} • ${material.pages.length} trang`,
       },
     ]);
     resetQuiz();
@@ -902,6 +1220,85 @@ export default function Home() {
         behavior: "smooth",
       });
     }
+  }
+
+  function addAnnotation(
+    sourcePageIndex: number,
+    annotation: Omit<PageAnnotation, "id" | "materialId" | "pageIndex">,
+  ) {
+    setAnnotations((current) => [
+      ...current,
+      {
+        ...annotation,
+        id: `annotation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        materialId: activeMaterial.id,
+        pageIndex: sourcePageIndex,
+      },
+    ]);
+    setToast(language === "vi" ? "Đã thêm ghi chú" : "Annotation added");
+  }
+
+  function updateAnnotation(id: string, text: string) {
+    setAnnotations((current) =>
+      current.map((annotation) =>
+        annotation.id === id ? { ...annotation, text } : annotation,
+      ),
+    );
+  }
+
+  function removeAnnotation(id: string) {
+    setAnnotations((current) =>
+      current.filter((annotation) => annotation.id !== id),
+    );
+    setToast(language === "vi" ? "Đã xóa ghi chú" : "Annotation removed");
+  }
+
+  function clearPageAnnotations() {
+    setAnnotations((current) =>
+      current.filter(
+        (annotation) =>
+          annotation.materialId !== activeMaterial.id ||
+          annotation.pageIndex !== pageIndex,
+      ),
+    );
+    setToast(
+      language === "vi"
+        ? `Đã xóa ghi chú trang ${pageIndex + 1}`
+        : `Cleared annotations on page ${pageIndex + 1}`,
+    );
+  }
+
+  function onAnnotationImageChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      setToast(language === "vi" ? "Hãy chọn một file ảnh" : "Choose an image file");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      setToast(
+        language === "vi"
+          ? "Ảnh ghi chú cần nhỏ hơn 2 MB"
+          : "Annotation images must be under 2 MB",
+      );
+      event.target.value = "";
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== "string") return;
+      addAnnotation(pageIndex, {
+        kind: "image",
+        imageUrl: reader.result,
+        x: 30,
+        y: 24,
+        width: 40,
+        height: 34,
+      });
+      setViewerTool("read");
+    };
+    reader.readAsDataURL(file);
+    event.target.value = "";
   }
 
   function addHighlight(
@@ -1169,10 +1566,34 @@ export default function Home() {
       .join("\n");
   }
 
+  function selectedLearningFocus() {
+    const selectedPages =
+      contextScope === "current-page"
+        ? new Set([pageIndex])
+        : new Set(activeMaterial.pages.map((_, index) => index));
+    const noteTexts = annotations
+      .filter(
+        (annotation) =>
+          annotation.materialId === activeMaterial.id &&
+          annotation.kind === "note" &&
+          selectedPages.has(annotation.pageIndex) &&
+          annotation.text?.trim(),
+      )
+      .map(
+        (annotation) =>
+          `[Note trang ${annotation.pageIndex + 1}] ${annotation.text?.trim()}`,
+      );
+    return [...highlights, ...noteTexts].join("\n");
+  }
+
   const sourceScopeLabel =
     contextScope === "current-page"
-      ? `Slide đang xem • Trang ${pageIndex + 1}`
-      : `Toàn bộ tài liệu • ${activeMaterial.pages.length} trang`;
+      ? language === "vi"
+        ? `Slide đang xem • Trang ${pageIndex + 1}`
+        : `Current slide • Page ${pageIndex + 1}`
+      : language === "vi"
+        ? `Toàn bộ tài liệu • ${activeMaterial.pages.length} trang`
+        : `Full document • ${activeMaterial.pages.length} pages`;
 
   async function sendQuestion(event?: FormEvent, promptOverride?: string) {
     event?.preventDefault();
@@ -1198,8 +1619,9 @@ export default function Home() {
           mode: "chat",
           question: prompt,
           context,
-          focus: highlights.join("\n"),
+          focus: selectedLearningFocus(),
           scope: contextScope,
+          language,
           page: pageIndex + 1,
           pageCount: activeMaterial.pages.length,
           materialId: activeMaterial.id,
@@ -1267,8 +1689,9 @@ export default function Home() {
               ? "Tạo câu hỏi kiểm tra hiểu và áp dụng"
               : "Tạo thẻ ghi nhớ các ý quan trọng",
           context,
-          focus: highlights.join("\n"),
+          focus: selectedLearningFocus(),
           scope: contextScope,
+          language,
           page: pageIndex + 1,
           pageCount: activeMaterial.pages.length,
           materialId: activeMaterial.id,
@@ -1377,6 +1800,7 @@ export default function Home() {
 
   return (
     <main
+      lang={language}
       className={`app-shell ${isDark ? "theme-dark" : ""} ${
         !leftOpen ? "left-collapsed" : ""
       } ${!rightOpen ? "right-collapsed" : ""}`}
@@ -1416,6 +1840,20 @@ export default function Home() {
             <span>7 ngày</span>
           </div>
           <button
+            className="language-button"
+            onClick={() =>
+              setLanguage((current) => (current === "vi" ? "en" : "vi"))
+            }
+            aria-label={
+              language === "vi"
+                ? "Switch interface and AI responses to English"
+                : "Chuyển giao diện và câu trả lời AI sang tiếng Việt"
+            }
+            title={language === "vi" ? "English" : "Tiếng Việt"}
+          >
+            {language.toUpperCase()}
+          </button>
+          <button
             className="icon-button"
             onClick={() => setIsDark((value) => !value)}
             aria-label={isDark ? "Bật giao diện sáng" : "Bật giao diện tối"}
@@ -1450,6 +1888,13 @@ export default function Home() {
           type="file"
           accept=".pdf,.pptx,.docx,.txt,.md"
           onChange={onFileChange}
+          hidden
+        />
+        <input
+          ref={annotationImageRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={onAnnotationImageChange}
           hidden
         />
         <button
@@ -1538,29 +1983,123 @@ export default function Home() {
               </button>
             )}
             <button
-              className={`tool-button ${!highlightMode ? "active" : ""}`}
-              onClick={() => setHighlightMode(false)}
-              title="Chế độ đọc"
+              className={`tool-button ${viewerTool === "read" ? "active" : ""}`}
+              onClick={() => setViewerTool("read")}
+              title={language === "vi" ? "Chế độ đọc" : "Read mode"}
             >
-              <ArrowRight size={16} />
-              <span>Đọc</span>
+              <MousePointer2 size={16} />
+              <span>{language === "vi" ? "Đọc" : "Read"}</span>
             </button>
             <button
-              className={`tool-button ${highlightMode ? "active highlighter" : ""}`}
-              onClick={() => setHighlightMode(true)}
-              title="Chọn hoặc bấm vào nội dung để bôi sáng"
+              className={`tool-button ${viewerTool === "pen" ? "active" : ""}`}
+              onClick={() => setViewerTool("pen")}
+              title={language === "vi" ? "Vẽ tự do trên trang" : "Draw on page"}
+            >
+              <Pencil size={16} />
+              <span>{language === "vi" ? "Bút" : "Pen"}</span>
+            </button>
+            <button
+              className={`tool-button ${
+                viewerTool === "highlight" ? "active highlighter" : ""
+              }`}
+              onClick={() => setViewerTool("highlight")}
+              title={
+                language === "vi"
+                  ? "Chọn hoặc bấm vào nội dung để bôi sáng"
+                  : "Select text to highlight"
+              }
             >
               <Highlighter size={16} />
-              <span>Bôi sáng</span>
+              <span>{language === "vi" ? "Highlight" : "Highlight"}</span>
             </button>
-            <button className="tool-button icon-only" aria-label="Thêm tuỳ chọn" title="Thêm tuỳ chọn">
+            <button
+              className={`tool-button ${
+                viewerTool === "circle" ? "active" : ""
+              }`}
+              onClick={() => setViewerTool("circle")}
+              title={language === "vi" ? "Khoanh vùng" : "Circle an area"}
+            >
+              <Circle size={16} />
+              <span>{language === "vi" ? "Khoanh" : "Circle"}</span>
+            </button>
+            <button
+              className={`tool-button ${viewerTool === "note" ? "active" : ""}`}
+              onClick={() => setViewerTool("note")}
+              title={
+                language === "vi"
+                  ? "Bấm lên trang để thêm ghi chú"
+                  : "Click the page to add a note"
+              }
+            >
+              <StickyNote size={16} />
+              <span>Note</span>
+            </button>
+            <button
+              className="tool-button"
+              onClick={() => annotationImageRef.current?.click()}
+              title={
+                language === "vi"
+                  ? "Chèn ảnh vào trang hiện tại"
+                  : "Insert an image on the current page"
+              }
+            >
+              <ImagePlus size={16} />
+              <span>{language === "vi" ? "Ảnh" : "Image"}</span>
+            </button>
+            <button
+              className={`tool-button ${
+                viewerTool === "eraser" ? "active eraser" : ""
+              }`}
+              onClick={() => setViewerTool("eraser")}
+              title={
+                language === "vi"
+                  ? "Chọn nét vẽ, khoanh hoặc ảnh để xóa"
+                  : "Select an annotation to erase"
+              }
+            >
+              <Eraser size={16} />
+              <span>{language === "vi" ? "Tẩy" : "Erase"}</span>
+            </button>
+            {viewerTool === "eraser" && (
+              <button
+                className="tool-button icon-only danger"
+                onClick={clearPageAnnotations}
+                aria-label={
+                  language === "vi"
+                    ? "Xóa mọi ghi chú trên trang"
+                    : "Clear page annotations"
+                }
+                title={
+                  language === "vi"
+                    ? "Xóa mọi ghi chú trên trang"
+                    : "Clear page annotations"
+                }
+              >
+                <Trash2 size={16} />
+              </button>
+            )}
+            <button
+              className="tool-button icon-only"
+              aria-label={language === "vi" ? "Thêm tuỳ chọn" : "More options"}
+              title={language === "vi" ? "Thêm tuỳ chọn" : "More options"}
+            >
               <MoreHorizontal size={17} />
             </button>
           </div>
           <div className="page-pill">
             <Layers3 size={13} />
-            Trang {pageIndex + 1} / {activeMaterial.pages.length}
-            <span>Cuộn liên tục</span>
+            {language === "vi" ? "Trang" : "Page"} {pageIndex + 1} /{" "}
+            {activeMaterial.pages.length}
+            <span>
+              {
+                annotations.filter(
+                  (annotation) =>
+                    annotation.materialId === activeMaterial.id &&
+                    annotation.pageIndex === pageIndex,
+                ).length
+              }{" "}
+              note
+            </span>
           </div>
           <div className="toolbar-group toolbar-right">
             <button
@@ -1617,7 +2156,7 @@ export default function Home() {
                     (viewerPage.pdfSource && viewerPage.pdfPageNumber)
                       ? "has-native-preview"
                       : ""
-                  } ${highlightMode ? "highlight-mode" : "read-mode"}`}
+                  } ${highlightMode ? "highlight-mode" : "read-mode"} tool-${viewerTool}`}
                   style={{ aspectRatio: String(pageRatio) }}
                   key={viewerPage.id}
                   onMouseUp={() => handleTextSelection(viewerIndex)}
@@ -1753,6 +2292,20 @@ export default function Home() {
                       </div>
                     </>
                   )}
+                  <AnnotationLayer
+                    annotations={annotations.filter(
+                      (annotation) =>
+                        annotation.materialId === activeMaterial.id &&
+                        annotation.pageIndex === viewerIndex,
+                    )}
+                    tool={viewerTool}
+                    language={language}
+                    onAdd={(annotation) =>
+                      addAnnotation(viewerIndex, annotation)
+                    }
+                    onUpdate={updateAnnotation}
+                    onRemove={removeAnnotation}
+                  />
                 </article>
               );
             })}
@@ -1795,7 +2348,7 @@ export default function Home() {
             onClick={() => setAgentTab("chat")}
             role="tab"
           >
-            <MessageCircle size={15} /> Hỏi AI
+            <MessageCircle size={15} /> {language === "vi" ? "Hỏi AI" : "Ask AI"}
           </button>
           <button
             className={agentTab === "quiz" ? "active" : ""}
@@ -1809,21 +2362,24 @@ export default function Home() {
             onClick={createFlashcards}
             role="tab"
           >
-            <Layers3 size={15} /> Thẻ nhớ
+            <Layers3 size={15} /> {language === "vi" ? "Thẻ nhớ" : "Cards"}
           </button>
         </div>
 
         {agentTab === "chat" && (
           <>
-            <div className="source-scope">
+            <div className="source-scope compact-source-scope">
               <div className="source-scope-heading">
-                <span>Nguồn trả lời</span>
-                <small>{sourceScopeLabel}</small>
+                <span>{language === "vi" ? "Nguồn" : "Source"}</span>
               </div>
               <div
                 className="source-scope-options"
                 role="radiogroup"
-                aria-label="Chọn phạm vi tài liệu cho AI"
+                aria-label={
+                  language === "vi"
+                    ? "Chọn phạm vi tài liệu cho AI"
+                    : "Select AI document scope"
+                }
               >
                 <button
                   type="button"
@@ -1835,10 +2391,10 @@ export default function Home() {
                   onClick={() => setContextScope("current-page")}
                 >
                   <FileText size={15} />
-                  <span>
-                    <strong>Slide đang xem</strong>
-                    <small>Chỉ trang {pageIndex + 1}</small>
-                  </span>
+                  <strong>
+                    {language === "vi" ? "Slide hiện tại" : "Current"} ·{" "}
+                    {pageIndex + 1}
+                  </strong>
                 </button>
                 <button
                   type="button"
@@ -1850,10 +2406,10 @@ export default function Home() {
                   onClick={() => setContextScope("all-document")}
                 >
                   <BookOpen size={15} />
-                  <span>
-                    <strong>Toàn bộ slide</strong>
-                    <small>{activeMaterial.pages.length} trang</small>
-                  </span>
+                  <strong>
+                    {language === "vi" ? "Toàn bộ" : "All"} ·{" "}
+                    {activeMaterial.pages.length}
+                  </strong>
                 </button>
               </div>
             </div>
@@ -1861,20 +2417,28 @@ export default function Home() {
             <div className="context-card">
               <div className="context-heading">
                 <span>
-                  <Highlighter size={14} /> Ngữ cảnh đã chọn
+                  <Highlighter size={14} />{" "}
+                  {language === "vi" ? "Ngữ cảnh đã chọn" : "Selected context"}
                 </span>
                 {highlights.length > 0 && (
                   <button onClick={() => setHighlightEntries([])}>
-                    Xoá tất cả
+                    {language === "vi" ? "Xoá tất cả" : "Clear"}
                   </button>
                 )}
               </div>
               {highlights.length === 0 ? (
                 <p>
-                  Chưa có đoạn ưu tiên. AI sẽ tìm câu trả lời trong{" "}
-                  {contextScope === "current-page"
-                    ? `slide ${pageIndex + 1}`
-                    : "toàn bộ tài liệu"}.
+                  {language === "vi"
+                    ? `Chưa có đoạn ưu tiên. AI sẽ tìm trong ${
+                        contextScope === "current-page"
+                          ? `slide ${pageIndex + 1}`
+                          : "toàn bộ tài liệu"
+                      }.`
+                    : `No priority excerpt. AI will search ${
+                        contextScope === "current-page"
+                          ? `slide ${pageIndex + 1}`
+                          : "the full document"
+                      }.`}
                 </p>
               ) : (
                 <div className="highlight-list">
@@ -1912,7 +2476,7 @@ export default function Home() {
                     <p>{message.text}</p>
                     {message.evidence && message.evidence.length > 0 && (
                       <div className="answer-evidence">
-                        <strong>Căn cứ</strong>
+                        <strong>{language === "vi" ? "Căn cứ" : "Evidence"}</strong>
                         {message.evidence.map((item, evidenceIndex) => (
                           <p key={`${message.id}-evidence-${evidenceIndex}`}>
                             {item.claim} — [{item.citation}]
@@ -1922,13 +2486,13 @@ export default function Home() {
                     )}
                     {message.confidence && (
                       <p className="answer-level">
-                        <strong>Mức độ</strong>
+                        <strong>{language === "vi" ? "Mức độ" : "Grounding"}</strong>
                         {message.confidence}
                       </p>
                     )}
                     {message.note && (
                       <p className="answer-note">
-                        <strong>Lưu ý</strong>
+                        <strong>{language === "vi" ? "Lưu ý" : "Note"}</strong>
                         {message.note}
                       </p>
                     )}
@@ -1961,13 +2525,19 @@ export default function Home() {
             </div>
 
             <div className="quick-actions">
-              <span>Học nhanh từ phần đã chọn</span>
+              <span>
+                {language === "vi"
+                  ? "Học nhanh từ phần đã chọn"
+                  : "Learn from the selected scope"}
+              </span>
               <div>
                 <button onClick={createQuiz}>
-                  <CircleHelp size={15} /> Tạo quiz
+                  <CircleHelp size={15} />{" "}
+                  {language === "vi" ? "Tạo quiz" : "Create quiz"}
                 </button>
                 <button onClick={createFlashcards}>
-                  <Layers3 size={15} /> Tạo flashcard
+                  <Layers3 size={15} />{" "}
+                  {language === "vi" ? "Tạo flashcard" : "Create cards"}
                 </button>
               </div>
             </div>
@@ -1984,8 +2554,12 @@ export default function Home() {
                 }}
                 placeholder={
                   contextScope === "current-page"
-                    ? `Hỏi về slide ${pageIndex + 1}…`
-                    : "Hỏi trên toàn bộ tài liệu…"
+                    ? language === "vi"
+                      ? `Hỏi về slide ${pageIndex + 1}…`
+                      : `Ask about slide ${pageIndex + 1}…`
+                    : language === "vi"
+                      ? "Hỏi trên toàn bộ tài liệu…"
+                      : "Ask across the full document…"
                 }
                 rows={2}
               />
@@ -1994,8 +2568,16 @@ export default function Home() {
                   type="button"
                   className="attach-button"
                   onClick={() => inputRef.current?.click()}
-                  aria-label="Tải một tài liệu khác"
-                  title="Tải một tài liệu khác"
+                  aria-label={
+                    language === "vi"
+                      ? "Tải một tài liệu khác"
+                      : "Upload another document"
+                  }
+                  title={
+                    language === "vi"
+                      ? "Tải một tài liệu khác"
+                      : "Upload another document"
+                  }
                 >
                   <Paperclip size={16} />
                 </button>
@@ -2004,7 +2586,9 @@ export default function Home() {
                   className="send-button"
                   type="submit"
                   disabled={!question.trim() || isThinking}
-                  aria-label="Gửi câu hỏi"
+                  aria-label={
+                    language === "vi" ? "Gửi câu hỏi" : "Send question"
+                  }
                 >
                   <Send size={16} />
                 </button>
@@ -2020,7 +2604,7 @@ export default function Home() {
                 <Sparkles size={20} />
                 <strong>Đang tạo quiz từ đúng nguồn đã chọn…</strong>
                 <span>
-                  {activeMaterial.transcriptLabel ?? sourceScopeLabel}
+                  {sourceScopeLabel}
                 </span>
               </div>
             ) : quiz.length === 0 ? (
@@ -2145,7 +2729,7 @@ export default function Home() {
                 <Sparkles size={20} />
                 <strong>Đang tạo thẻ từ đúng nguồn đã chọn…</strong>
                 <span>
-                  {activeMaterial.transcriptLabel ?? sourceScopeLabel}
+                  {sourceScopeLabel}
                 </span>
               </div>
             ) : flashcards.length === 0 ? (

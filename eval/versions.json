@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "currentVersion": "v3-grounding-quality",
+  "currentVersion": "v4-slide-primary-annotations",
   "stages": [
     {
       "stage": 1,
@@ -31,7 +31,16 @@
     },
     {
       "stage": 4,
-      "version": "v4-release-gate",
+      "version": "v4-slide-primary-annotations",
+      "status": "implemented-awaiting-live-quota",
+      "objective": "Thêm annotation, VI/EN, dark mode lưu trạng thái và bắt buộc slide Pxxx là nguồn trả lời chính; transcript chỉ bổ sung.",
+      "suite": "suites/v4-slide-primary-annotations.json",
+      "report": "results/v4-slide-primary-annotations/2026-07-30T20-47-32-484Z.json",
+      "exitCriteria": "Toàn bộ golden set đạt, citation chính là Pxxx và hai case tiếng Anh đạt schema grounding."
+    },
+    {
+      "stage": 5,
+      "version": "v5-release-gate",
       "status": "planned",
       "objective": "Chạy lặp lại bộ regression trước demo và xác nhận kết quả ổn định.",
       "exitCriteria": "Ba lần chạy liên tiếp đạt toàn bộ quality bar."

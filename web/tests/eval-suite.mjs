@@ -35,7 +35,7 @@ if (suite.version !== suiteVersion) {
   );
 }
 
-function goldenCases(markdown) {
+function goldenCases(markdown, citationPrefix = "T04-") {
   const conceptChecks = {
     16: ["bộ não ngôn ngữ", "lớp giao diện", "lớp áo"],
     17: ["sinh nội dung", "phân loại"],
@@ -65,7 +65,7 @@ function goldenCases(markdown) {
       expected.behavior = "refuse";
       expected.maximumCitations = 0;
     } else {
-      expected.citationPrefix = "T04-";
+      expected.citationPrefix = citationPrefix;
       expected.minimumCitations = 1;
       expected.minimumEvidence = 1;
       expected.mustMentionAny = conceptChecks[number];
@@ -98,7 +98,9 @@ function goldenCases(markdown) {
 
 if (suite.goldenSetFile) {
   const markdown = await readFile(resolve(evalDir, suite.goldenSetFile), "utf8");
-  suite.cases.push(...goldenCases(markdown));
+  suite.cases.push(
+    ...goldenCases(markdown, suite.primaryCitationPrefix ?? "T04-"),
+  );
 }
 
 function normalize(value) {
@@ -131,6 +133,9 @@ function evaluateBehavior(expected, actualText, checks) {
         "không đề cập",
         "không cung cấp",
         "không tìm thấy đủ thông tin",
+        "does not contain enough information",
+        "not enough information",
+        "missing information",
       ].some((signal) => actualText.includes(normalize(signal)));
     }
     if (behavior === "clarify") {
@@ -142,6 +147,8 @@ function evaluateBehavior(expected, actualText, checks) {
         "đoạn nào",
         "nội dung nào",
         "cái nào",
+        "please clarify",
+        "which section",
       ].some((signal) => actualText.includes(normalize(signal)));
     }
     if (behavior === "refuse") {
@@ -150,6 +157,8 @@ function evaluateBehavior(expected, actualText, checks) {
         "không cung cấp",
         "không cấp quyền",
         "từ chối",
+        "cannot help",
+        "do not provide",
       ].some((signal) => actualText.includes(normalize(signal)));
     }
     return false;

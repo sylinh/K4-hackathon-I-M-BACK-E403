@@ -184,6 +184,23 @@ input:focus-visible {
   height: 34px;
 }
 
+.language-button {
+  width: 38px;
+  height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--paper);
+  color: var(--blue-deep);
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.language-button:hover {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
 .search-button {
   width: 198px;
   height: 38px;
@@ -608,6 +625,22 @@ input:focus-visible {
   color: #ffe37b;
 }
 
+.tool-button.eraser.active {
+  border-color: #e7b6ae;
+  background: #fff1ef;
+  color: #a43d2f;
+}
+
+.theme-dark .tool-button.eraser.active {
+  border-color: #73483f;
+  background: #392723;
+  color: #ffaea1;
+}
+
+.tool-button.danger {
+  color: #b43f31;
+}
+
 .tool-button.icon-only {
   width: 34px;
   padding: 0;
@@ -703,6 +736,149 @@ input:focus-visible {
   overflow: visible;
   border-radius: 10px;
   background: #ffffff;
+}
+
+.annotation-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+  touch-action: pan-y pinch-zoom;
+}
+
+.annotation-layer.tool-pen,
+.annotation-layer.tool-circle,
+.annotation-layer.tool-note,
+.annotation-layer.tool-eraser {
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.annotation-layer.tool-pen,
+.annotation-layer.tool-circle {
+  cursor: crosshair;
+}
+
+.annotation-layer.tool-note {
+  cursor: copy;
+}
+
+.annotation-layer.tool-eraser {
+  cursor: not-allowed;
+}
+
+.annotation-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  pointer-events: none;
+}
+
+.annotation-pen,
+.annotation-circle {
+  fill: none;
+  stroke: #e34836;
+  stroke-width: 0.55;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.annotation-circle {
+  stroke-width: 0.7;
+}
+
+.annotation-pen.is-draft,
+.annotation-circle.is-draft {
+  opacity: 0.66;
+  stroke-dasharray: 1.2 0.8;
+}
+
+.tool-eraser .annotation-pen,
+.tool-eraser .annotation-circle {
+  pointer-events: stroke;
+}
+
+.tool-eraser .annotation-pen:hover,
+.tool-eraser .annotation-circle:hover {
+  stroke: #ff8a7c;
+  stroke-width: 1.1;
+}
+
+.page-note {
+  position: absolute;
+  z-index: 3;
+  min-width: 120px;
+  min-height: 74px;
+  padding: 9px;
+  border: 1px solid #d5b848;
+  border-radius: 5px;
+  background: #fff2a8;
+  color: #43360d;
+  box-shadow: 0 9px 24px rgba(72, 57, 8, 0.2);
+  pointer-events: auto;
+  transform: translate(-8%, -8%);
+}
+
+.page-note textarea {
+  width: 100%;
+  min-height: 56px;
+  resize: both;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: inherit;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.page-note > button {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: rgba(92, 70, 0, 0.09);
+  color: #6c5200;
+  cursor: pointer;
+}
+
+.page-image {
+  position: absolute;
+  z-index: 2;
+  overflow: hidden;
+  padding: 0;
+  border: 2px solid white;
+  border-radius: 5px;
+  background: white;
+  box-shadow: 0 8px 22px rgba(18, 35, 63, 0.24);
+  pointer-events: none;
+}
+
+.page-image-content {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+}
+
+.tool-eraser .page-image {
+  pointer-events: auto;
+}
+
+.tool-eraser .page-image:hover {
+  border-color: #e34836;
+  opacity: 0.72;
 }
 
 .pdf-native-page {
@@ -1250,6 +1426,34 @@ input:focus-visible {
 .source-scope {
   flex: 0 0 auto;
   padding: 10px 12px 0;
+}
+
+.compact-source-scope {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding-top: 7px;
+}
+
+.compact-source-scope .source-scope-heading {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.compact-source-scope .source-scope-options {
+  flex: 1;
+}
+
+.compact-source-scope .source-scope-options > button {
+  min-height: 30px;
+  justify-content: center;
+  gap: 5px;
+  padding: 4px 6px;
+  text-align: center;
+}
+
+.compact-source-scope .source-scope-options strong {
+  font-size: 8px;
 }
 
 .source-scope-heading {
@@ -2219,6 +2423,17 @@ input:focus-visible {
 
 .mobile-only {
   display: none;
+}
+
+@media (max-width: 1600px) {
+  .viewer-toolbar > .toolbar-group:first-child .tool-button span {
+    display: none;
+  }
+
+  .viewer-toolbar > .toolbar-group:first-child .tool-button {
+    width: 34px;
+    padding: 0;
+  }
 }
 
 @media (max-width: 1180px) {

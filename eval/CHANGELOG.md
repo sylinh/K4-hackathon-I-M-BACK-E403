@@ -35,3 +35,17 @@
 **Kết luận:** Toàn bộ hành vi và schema đạt khi chạy bằng fallback có căn cứ. Gemini trả HTTP 429 do quota nên có 0/50 response live; quality gate live chưa đạt và cần chạy lại sau khi quota API được cấp.
 
 **Báo cáo:** `results/v3-grounding-quality/2026-07-30T15-48-12-952Z.json`.
+
+## v4-slide-primary-annotations - 2026-07-31
+
+**Giai đoạn:** Annotation, VI/EN và đổi thứ tự ưu tiên nguồn.
+
+**Input:** 30 case regression, 20 case golden Day 1 và 2 case tiếng Anh.
+
+**Thay đổi nguồn:** Slide/PDF được trích thành `Pxxx` và là nguồn sự thật chính. Transcript `Txx-xxx` chỉ bổ sung cách diễn giải cho ý đã có trên slide; không được dùng để tạo một kết luận độc lập.
+
+**Output:** 52/52 PASS (100%), source isolation 100%, out-of-scope 100%, hai case tiếng Anh PASS.
+
+**Kết luận:** Logic slide-primary, schema grounding và fallback đạt toàn bộ case. Lượt cuối có 0/52 response live do quota Gemini, vì vậy quality gate live vẫn đang chờ quota.
+
+**Báo cáo:** `results/v4-slide-primary-annotations/2026-07-30T20-47-32-484Z.json`.

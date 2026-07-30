@@ -41,9 +41,9 @@ npm run eval
 Chỉ định version:
 
 ```powershell
-npm run eval:v3
+npm run eval:v4
 # hoặc
-npm run eval -- --version v3-grounding-quality
+npm run eval -- --version v4-slide-primary-annotations
 ```
 
 Có thể đổi URL và khoảng nghỉ:
@@ -51,14 +51,15 @@ Có thể đổi URL và khoảng nghỉ:
 ```powershell
 $env:EVAL_BASE_URL="http://localhost:3000"
 $env:EVAL_DELAY_MS="1200"
-npm run eval -- --version v3-grounding-quality
+npm run eval -- --version v4-slide-primary-annotations
 ```
 
 Mỗi lần chạy tạo một file timestamp mới. Runner không ghi đè báo cáo cũ.
 
-Suite v3 chạy 30 case regression và tự nạp thêm 20 case từ
-`golden-set.md`. Với chat, runner kiểm tra cả `answer`, `evidence`,
-`confidence`, `note` và `citations`.
+Suite v4 chạy 30 case regression, tự nạp 20 case từ `golden-set.md` và
+thêm hai case tiếng Anh. Với chat, runner kiểm tra cả `answer`, `evidence`,
+`confidence`, `note`, `citations` và bắt buộc citation chính là trang slide
+`Pxxx`.
 
 ## Tạo version tiếp theo
 

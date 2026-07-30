@@ -14,6 +14,7 @@
     "eval:v1": "node tests/eval-suite.mjs --version v1-baseline",
     "eval:v2": "node tests/eval-suite.mjs --version v2-source-scope",
     "eval:v3": "node tests/eval-suite.mjs --version v3-grounding-quality",
+    "eval:v4": "node tests/eval-suite.mjs --version v4-slide-primary-annotations",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

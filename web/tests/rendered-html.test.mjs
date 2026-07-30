@@ -22,7 +22,7 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /highlightedPdfTextItems/);
   assert.match(page, /handleViewerScroll/);
   assert.match(page, /activeMaterial\.pages\.map/);
-  assert.match(page, /Cuộn liên tục/);
+  assert.match(page, /annotation\.pageIndex === pageIndex/);
   assert.match(page, /data-page-index/);
   assert.match(page, /bundledPdfPages/);
   assert.match(page, /IntersectionObserver/);
@@ -31,7 +31,7 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /selectedSourceContext/);
   assert.match(page, /ContextScope/);
   assert.match(page, /Slide đang xem/);
-  assert.match(page, /Toàn bộ slide/);
+  assert.match(page, /"Toàn bộ"/);
   assert.match(page, /Tải một tài liệu khác/);
   assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.86\)/);
   assert.match(page, /new Uint8Array\(await file\.arrayBuffer\(\)\)/);
@@ -58,7 +58,19 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /answer-evidence/);
   assert.match(page, /Được nêu trực tiếp/);
   assert.match(page, /Không đủ thông tin/);
+  assert.match(page, /type ViewerTool/);
+  assert.match(page, /function AnnotationLayer/);
+  assert.match(page, /annotationImageRef/);
+  assert.match(page, /vlearn-annotations/);
+  assert.match(page, /vlearn-language/);
+  assert.match(page, /compact-source-scope/);
+  assert.match(page, /selectedLearningFocus/);
   assert.match(styles, /\.answer-evidence/);
+  assert.match(styles, /\.annotation-layer/);
+  assert.match(styles, /\.page-note/);
+  assert.match(styles, /\.page-image/);
+  assert.match(styles, /\.language-button/);
+  assert.match(styles, /\.compact-source-scope/);
   assert.match(layout, /VLearn Focus — Học chủ động cùng AI/);
   assert.match(layout, /new URL\("\/og\.png", metadataBase\)/);
   assert.match(styles, /@media \(max-width: 920px\)/);
@@ -117,6 +129,10 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /Được suy ra/);
   assert.match(agentRoute, /guardChatQuestion/);
   assert.match(agentRoute, /liveEvidence/);
+  assert.match(agentRoute, /<SLIDE_CHINH>/);
+  assert.match(agentRoute, /<TRANSCRIPT_BO_SUNG>/);
+  assert.match(agentRoute, /primaryChunks/);
+  assert.match(agentRoute, /language: ResponseLanguage/);
   assert.match(agentRoute, /fallbackQuiz/);
   assert.match(agentRoute, /fallbackFlashcards/);
   assert.match(materialRoute, /20 \* 1024 \* 1024/);
