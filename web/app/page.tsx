@@ -473,8 +473,9 @@ async function extractPdfPages(file: File): Promise<SlidePage[]> {
   pdfjs.GlobalWorkerOptions.workerSrc = pdfWorker;
   const sourceUrl = URL.createObjectURL(file);
   const data = new Uint8Array(await file.arrayBuffer());
+  const loadingTask = pdfjs.getDocument({ data });
   try {
-    const pdf = await pdfjs.getDocument({ data }).promise;
+    const pdf = await loadingTask.promise;
     const pageCount = pdf.numPages;
     const pages: SlidePage[] = [];
 
@@ -516,9 +517,10 @@ async function extractPdfPages(file: File): Promise<SlidePage[]> {
       pages.push(extractedPage);
       pdfPage.cleanup();
     }
-    await pdf.destroy();
+    await loadingTask.destroy().catch(() => undefined);
     return pages;
   } catch (error) {
+    await loadingTask.destroy().catch(() => undefined);
     URL.revokeObjectURL(sourceUrl);
     throw error;
   }

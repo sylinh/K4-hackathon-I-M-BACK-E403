@@ -24,6 +24,8 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /<PdfCanvasPage/);
   assert.match(page, /window\.devicePixelRatio/);
   assert.match(page, /const pageCount = pdf\.numPages/);
+  assert.match(page, /loadingTask\.destroy\(\)/);
+  assert.doesNotMatch(page, /pdf\.destroy\(\)/);
   assert.doesNotMatch(page, /canvas\.toDataURL/);
   assert.doesNotMatch(page, /Math\.min\(pdf\.numPages,\s*60\)/);
   assert.match(page, /pdf-text-layer/);
