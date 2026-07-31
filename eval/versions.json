@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "currentVersion": "v4-slide-primary-annotations",
+  "stages": [
+    {
+      "stage": 1,
+      "version": "v1-baseline",
+      "status": "completed",
+      "objective": "Đo baseline cho chat, quiz và flashcard trên đúng hai cặp PDF/transcript.",
+      "suite": "suites/v1-baseline.json",
+      "baselineReport": "results/v1-baseline/2026-07-30T14-32-20-632Z.json",
+      "exitCriteria": "Có báo cáo đầy đủ để xác định lỗi nguồn, phạm vi và schema."
+    },
+    {
+      "stage": 2,
+      "version": "v2-source-scope",
+      "status": "completed",
+      "objective": "Cho phép hỏi AI từ file tải lên và điều khiển phạm vi theo slide hiện tại hoặc toàn bộ tài liệu.",
+      "suite": "suites/v2-source-scope.json",
+      "report": "results/v2-source-scope/2026-07-30T15-23-03-310Z.json",
+      "exitCriteria": "Chat, quiz và flashcard từ file tải lên dùng citation Pxxx; hai phạm vi nguồn hoạt động độc lập."
+    },
+    {
+      "stage": 3,
+      "version": "v3-grounding-quality",
+      "status": "implemented-awaiting-live-quota",
+      "objective": "Bắt buộc trả lời có cấu trúc, chống bịa, xử lý thiếu dữ kiện và từ chối theo golden set Day 1.",
+      "suite": "suites/v3-grounding-quality.json",
+      "report": "results/v3-grounding-quality/2026-07-30T15-48-12-952Z.json",
+      "exitCriteria": "Tổng pass rate đạt ít nhất 80% với response Gemini thật."
+    },
+    {
+      "stage": 4,
+      "version": "v4-slide-primary-annotations",
+      "status": "implemented-awaiting-live-quota",
+      "objective": "Thêm annotation, VI/EN, dark mode lưu trạng thái và bắt buộc slide Pxxx là nguồn trả lời chính; transcript chỉ bổ sung.",
+      "suite": "suites/v4-slide-primary-annotations.json",
+      "report": "results/v4-slide-primary-annotations/2026-07-30T20-47-32-484Z.json",
+      "exitCriteria": "Toàn bộ golden set đạt, citation chính là Pxxx và hai case tiếng Anh đạt schema grounding."
+    },
+    {
+      "stage": 5,
+      "version": "v5-release-gate",
+      "status": "planned",
+      "objective": "Chạy lặp lại bộ regression trước demo và xác nhận kết quả ổn định.",
+      "exitCriteria": "Ba lần chạy liên tiếp đạt toàn bộ quality bar."
+    }
+  ]
+}

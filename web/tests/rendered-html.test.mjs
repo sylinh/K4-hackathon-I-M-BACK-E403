@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { access, readFile, readdir, stat } from "node:fs/promises";
 import test from "node:test";
 
@@ -19,10 +20,31 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /range\.intersectsNode\(element\)/);
   assert.match(page, /data-pdf-text-id/);
   assert.match(page, /highlightedPdfTextItems/);
+  assert.match(page, /aria-haspopup="menu"/);
+  assert.match(page, /more-tools-menu/);
+  assert.match(page, /connectedLineItems/);
+  assert.match(page, /selectionRects/);
+  assert.match(page, /elementsFromPoint/);
+  assert.match(page, /eraseAtPoint/);
+  assert.match(page, /data-annotation-id/);
+  assert.match(page, /agent-resize-handle/);
+  assert.match(page, /vlearn-agent-panel-width/);
+  assert.match(styles, /--agent-panel-width/);
+  assert.doesNotMatch(page, /Tìm học liệu|7 ngày/);
   assert.match(page, /handleViewerScroll/);
   assert.match(page, /activeMaterial\.pages\.map/);
-  assert.match(page, /Cuộn liên tục/);
+  assert.match(page, /annotation\.pageIndex === pageIndex/);
   assert.match(page, /data-page-index/);
+  assert.match(page, /bundledPdfPages/);
+  assert.match(page, /IntersectionObserver/);
+  assert.match(page, /loadBundledPdf/);
+  assert.match(page, /loadPdfPageText/);
+  assert.match(page, /selectedSourceContext/);
+  assert.match(page, /ContextScope/);
+  assert.match(page, /Slide đang xem/);
+  assert.match(page, /"Toàn bộ"/);
+  assert.doesNotMatch(page, /className="attach-button"/);
+  assert.match(page, /canvas\.toDataURL\("image\/jpeg", 0\.86\)/);
   assert.match(page, /new Uint8Array\(await file\.arrayBuffer\(\)\)/);
   assert.match(page, /source\.data\.slice\(\)/);
   assert.doesNotMatch(page, /URL\.createObjectURL\(file\)/);
@@ -31,7 +53,6 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /const pageCount = pdf\.numPages/);
   assert.match(page, /loadingTask\.destroy\(\)/);
   assert.doesNotMatch(page, /pdf\.destroy\(\)/);
-  assert.doesNotMatch(page, /canvas\.toDataURL/);
   assert.doesNotMatch(page, /Math\.min\(pdf\.numPages,\s*60\)/);
   assert.match(page, /pdf-text-layer/);
   assert.match(page, /pdfSource/);
@@ -39,8 +60,50 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /Tạo quiz/);
   assert.match(page, /Tạo flashcard/);
   assert.match(page, /Xem kết quả/);
+  assert.match(page, /vlearn-personal-notebook/);
+  assert.match(page, /saveLearningSet/);
+  assert.match(page, /openSavedLearningSet/);
+  assert.match(page, /excludeLearningItems/);
+  assert.match(page, /learningItemKey/);
+  assert.match(page, /day-1-foundation/);
+  assert.match(page, /day-2-product/);
+  assert.match(page, /d1-slide-hackathon\.pdf/);
+  assert.match(page, /d2-slide-hackathon\.pdf/);
   assert.match(page, /\/api\/agent/);
   assert.match(page, /\/api\/materials/);
+  assert.match(page, /answer-evidence/);
+  assert.match(page, /Được nêu trực tiếp/);
+  assert.match(page, /Không đủ thông tin/);
+  assert.match(page, /type ViewerTool/);
+  assert.match(page, /function AnnotationLayer/);
+  assert.match(page, /annotationImageRef/);
+  assert.match(page, /vlearn-annotations/);
+  assert.match(page, /vlearn-language/);
+  assert.match(page, /compact-source-scope/);
+  assert.match(page, /selectedLearningFocus/);
+  assert.match(page, /citationPageNumber/);
+  assert.match(page, /goToCitation/);
+  assert.match(page, /incorrectQuizQuestions/);
+  assert.match(page, /reviewSnippet/);
+  assert.match(page, /Trang \$\{pageNumber\}/);
+  assert.match(styles, /\.answer-evidence/);
+  assert.match(styles, /\.evidence-citation/);
+  assert.match(styles, /\.citation-list/);
+  assert.match(styles, /\.message-bubble p/);
+  assert.match(styles, /font-size: 15px/);
+  assert.match(styles, /\.learning-heading span[\s\S]*font-family: Arial, Helvetica, sans-serif/);
+  assert.match(styles, /\.quiz-card h4[\s\S]*font-family: Arial, Helvetica, sans-serif/);
+  assert.match(styles, /\.flashcard p[\s\S]*font-family: Arial, Helvetica, sans-serif/);
+  assert.doesNotMatch(styles, /\.flashcard p[\s\S]*Georgia/);
+  assert.match(styles, /\.flashcard > span[\s\S]*letter-spacing: 0/);
+  assert.match(styles, /\.personal-notebook/);
+  assert.match(styles, /\.learning-save-button/);
+  assert.match(styles, /\.quiz-review-list/);
+  assert.match(styles, /\.annotation-layer/);
+  assert.match(styles, /\.page-note/);
+  assert.match(styles, /\.page-image/);
+  assert.match(styles, /\.language-button/);
+  assert.match(styles, /\.compact-source-scope/);
   assert.match(layout, /VLearn Focus — Học chủ động cùng AI/);
   assert.match(layout, /new URL\("\/og\.png", metadataBase\)/);
   assert.match(styles, /@media \(max-width: 920px\)/);
@@ -53,16 +116,69 @@ test("ships the complete VLearn Focus learning flow", async () => {
 });
 
 test("includes production assets and API routes", async () => {
-  const [ogStats, agentRoute, materialRoute, distEntries] = await Promise.all([
+  const [
+    ogStats,
+    dayOneAsset,
+    dayTwoAsset,
+    dayOneSource,
+    dayTwoSource,
+    agentRoute,
+    materialRoute,
+    distEntries,
+  ] = await Promise.all([
     stat(new URL("public/og.png", root)),
+    readFile(new URL("public/materials/d1-slide-hackathon.pdf", root)),
+    readFile(new URL("public/materials/d2-slide-hackathon.pdf", root)),
+    readFile(new URL("../data/vlearn-pack/slides/d1-slide-hackathon.pdf", root)),
+    readFile(new URL("../data/vlearn-pack/slides/d2-slide-hackathon.pdf", root)),
     readFile(new URL("app/api/agent/route.ts", root), "utf8"),
     readFile(new URL("app/api/materials/route.ts", root), "utf8"),
     readdir(new URL("dist/", root)),
   ]);
 
   assert.ok(ogStats.size > 100_000);
-  assert.match(agentRoute, /api\.openai\.com\/v1\/responses/);
-  assert.match(agentRoute, /fallbackAnswer/);
+  assert.ok(dayOneAsset.length > 1_000_000);
+  assert.ok(dayTwoAsset.length > 1_000_000);
+  assert.equal(
+    createHash("sha256").update(dayOneAsset).digest("hex"),
+    createHash("sha256").update(dayOneSource).digest("hex"),
+  );
+  assert.equal(
+    createHash("sha256").update(dayTwoAsset).digest("hex"),
+    createHash("sha256").update(dayTwoSource).digest("hex"),
+  );
+  assert.match(agentRoute, /generativelanguage\.googleapis\.com/);
+  assert.match(agentRoute, /gemini-3\.6-flash/);
+  assert.match(agentRoute, /GEMINI_API_KEY_1/);
+  assert.match(agentRoute, /GEMINI_API_KEY_2/);
+  assert.match(agentRoute, /GEMINI_API_KEY_3/);
+  assert.match(agentRoute, /geminiKeyCooldowns/);
+  assert.match(agentRoute, /moveToNextGeminiKey/);
+  assert.match(agentRoute, /transcript-04-clean\.md\?raw/);
+  assert.match(agentRoute, /transcript-01-clean\.md\?raw/);
+  assert.match(agentRoute, /retrieveChunks/);
+  assert.match(agentRoute, /contextChunks/);
+  assert.match(agentRoute, /uploaded-document/);
+  assert.match(agentRoute, /all-document/);
+  assert.match(agentRoute, /Pxxx/);
+  assert.match(agentRoute, /fallbackChat/);
+  assert.match(agentRoute, /<TAI_LIEU>/);
+  assert.match(agentRoute, /Không tìm thấy đủ thông tin trong tài liệu để kết luận/);
+  assert.match(agentRoute, /Được suy ra/);
+  assert.match(agentRoute, /guardChatQuestion/);
+  assert.match(agentRoute, /liveEvidence/);
+  assert.match(agentRoute, /<SLIDE_CHINH>/);
+  assert.match(agentRoute, /<TRANSCRIPT_BO_SUNG>/);
+  assert.match(agentRoute, /primaryChunks/);
+  assert.match(agentRoute, /language: ResponseLanguage/);
+  assert.match(agentRoute, /fallbackQuiz/);
+  assert.match(agentRoute, /const QUIZ_COUNT = 15/);
+  assert.match(agentRoute, /liveResult\.quiz\.length === learningCount/);
+  assert.match(agentRoute, /fallbackFlashcards/);
+  assert.match(agentRoute, /const FLASHCARD_COUNT = 20/);
+  assert.match(agentRoute, /liveResult\.flashcards\.length === learningCount/);
+  assert.match(agentRoute, /NỘI DUNG ĐÃ LƯU/);
+  assert.match(agentRoute, /excludeLearningItems\?: string\[\]/);
   assert.match(materialRoute, /20 \* 1024 \* 1024/);
   assert.match(materialRoute, /MATERIALS\.put/);
   assert.match(materialRoute, /await file\.arrayBuffer\(\)/);

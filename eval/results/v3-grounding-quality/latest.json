@@ -1,0 +1,17 @@
+{
+  "version": "v3-grounding-quality",
+  "stage": "03-grounding-quality",
+  "runId": "2026-07-30T15-48-12-952Z",
+  "generatedAt": "2026-07-30T15:48:12.952Z",
+  "report": "2026-07-30T15-48-12-952Z.json",
+  "summary": {
+    "total": 50,
+    "passed": 50,
+    "failed": 0,
+    "passRate": 1,
+    "sourceIsolationRate": 1,
+    "outOfScopePassRate": 1,
+    "liveResponses": 0,
+    "qualityBarPassed": false
+  }
+}

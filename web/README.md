@@ -26,10 +26,24 @@ npm test
 
 ## AI live
 
-Ứng dụng luôn có chế độ trợ lý demo theo ngữ cảnh để trình diễn không cần API
-key. Muốn dùng mô hình live, tạo `.env` từ `.env.example`, đặt
-`OPENAI_API_KEY` trong môi trường chạy và khởi động lại ứng dụng. Không commit
-API key vào repository.
+Ứng dụng dùng Gemini `gemini-3.6-flash` cho chat, quiz và flashcard. Khi chưa có
+API key, trợ lý vẫn trả kết quả dự phòng bằng cách truy xuất đúng transcript và
+giữ nguyên mã trích dẫn. Muốn dùng mô hình live, cấu hình `GEMINI_API_KEY_1`,
+`GEMINI_API_KEY_2` và `GEMINI_API_KEY_3` trong môi trường chạy rồi khởi động lại
+ứng dụng. Khi một project hết quota hoặc tạm lỗi, server sẽ chuyển sang project
+tiếp theo và tạm ngưng key lỗi. Biến `GEMINI_API_KEY` cũ vẫn được hỗ trợ để tương
+thích ngược. Không commit API key vào repository.
+
+## Liên kết học liệu
+
+Hai gói học liệu lớp được khóa nguồn ở phía server:
+
+- Day 1: `d1-slide-hackathon.pdf` + `transcript-04-clean.md` (`T04-*`);
+- Day 2: `d2-slide-hackathon.pdf` + `transcript-01-clean.md` (`T01-*`).
+
+Client chỉ gửi `materialId` và ngữ cảnh trang đang xem. Server tự chọn transcript
+đúng gói, truy xuất các đoạn liên quan rồi mới gọi mô hình. Vì vậy câu trả lời,
+quiz và flashcard không thể lấy nhầm nội dung từ buổi học còn lại.
 
 ## Lưu tài liệu
 

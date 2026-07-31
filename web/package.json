@@ -10,6 +10,13 @@
     "build": "vinext build",
     "start": "vinext start",
     "test": "npm run build && node --test tests/rendered-html.test.mjs",
+    "eval": "node tests/eval-suite.mjs",
+    "eval:v1": "node tests/eval-suite.mjs --version v1-baseline",
+    "eval:v2": "node tests/eval-suite.mjs --version v2-source-scope",
+    "eval:v3": "node tests/eval-suite.mjs --version v3-grounding-quality",
+    "eval:v4": "node tests/eval-suite.mjs --version v4-slide-primary-annotations",
+    "eval:v5": "node tests/eval-suite.mjs --version v5-mixed-language",
+    "eval:v6": "node tests/eval-suite.mjs --version v6-role-play-boundary",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
   },

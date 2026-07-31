@@ -1,0 +1,17 @@
+{
+  "version": "v2-source-scope",
+  "stage": "02-source-scope",
+  "runId": "2026-07-30T15-23-03-310Z",
+  "generatedAt": "2026-07-30T15:23:03.310Z",
+  "report": "2026-07-30T15-23-03-310Z.json",
+  "summary": {
+    "total": 30,
+    "passed": 21,
+    "failed": 9,
+    "passRate": 0.7,
+    "sourceIsolationRate": 1,
+    "outOfScopePassRate": 0,
+    "liveResponses": 0,
+    "qualityBarPassed": false
+  }
+}
