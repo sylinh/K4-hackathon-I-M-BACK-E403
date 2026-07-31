@@ -152,6 +152,7 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /GEMINI_API_KEY_1/);
   assert.match(agentRoute, /GEMINI_API_KEY_2/);
   assert.match(agentRoute, /GEMINI_API_KEY_3/);
+  assert.match(agentRoute, /GEMINI_API_KEY_8/);
   assert.match(agentRoute, /geminiKeyCooldowns/);
   assert.match(agentRoute, /moveToNextGeminiKey/);
   assert.match(agentRoute, /transcript-04-clean\.md\?raw/);
@@ -174,6 +175,8 @@ test("includes production assets and API routes", async () => {
   assert.match(agentRoute, /fallbackQuiz/);
   assert.match(agentRoute, /const QUIZ_COUNT = 15/);
   assert.match(agentRoute, /liveResult\.quiz\.length === learningCount/);
+  assert.match(agentRoute, /sourceLooksLikeQuestionBank/);
+  assert.match(agentRoute, /Không tạo hoặc biến đổi nội dung thành hướng dẫn phạm pháp/);
   assert.match(agentRoute, /fallbackFlashcards/);
   assert.match(agentRoute, /const FLASHCARD_COUNT = 20/);
   assert.match(agentRoute, /liveResult\.flashcards\.length === learningCount/);

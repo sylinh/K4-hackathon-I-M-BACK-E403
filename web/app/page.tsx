@@ -106,6 +106,7 @@ type ChatMessage = {
 type HighlightEntry = {
   id: string;
   text: string;
+  materialId: string;
   pageIndex: number;
   pdfTextItemIds: string[];
 };
@@ -1524,6 +1525,7 @@ export default function Home() {
             {
               id: `highlight-${Date.now()}-${sourcePageIndex}`,
               text: normalized,
+              materialId: activeMaterial.id,
               pageIndex: sourcePageIndex,
               pdfTextItemIds,
             },
@@ -1808,6 +1810,13 @@ export default function Home() {
       contextScope === "current-page"
         ? new Set([pageIndex])
         : new Set(activeMaterial.pages.map((_, index) => index));
+    const highlightTexts = highlightEntries
+      .filter(
+        (entry) =>
+          entry.materialId === activeMaterial.id &&
+          selectedPages.has(entry.pageIndex),
+      )
+      .map((entry) => `[Highlight trang ${entry.pageIndex + 1}] ${entry.text}`);
     const noteTexts = annotations
       .filter(
         (annotation) =>
@@ -1820,7 +1829,7 @@ export default function Home() {
         (annotation) =>
           `[Note trang ${annotation.pageIndex + 1}] ${annotation.text?.trim()}`,
       );
-    return [...highlights, ...noteTexts].join("\n");
+    return [...highlightTexts, ...noteTexts].join("\n");
   }
 
   const sourceScopeLabel =
@@ -1928,7 +1937,10 @@ export default function Home() {
     }
   }
 
-  async function requestLearningContent(mode: "quiz" | "flashcards") {
+  async function requestLearningContent(
+    mode: "quiz" | "flashcards",
+    count?: number,
+  ) {
     setIsGeneratingLearning(true);
     setLearningLive(false);
     try {
@@ -1963,6 +1975,7 @@ export default function Home() {
           materialId: activeMaterial.id,
           material: activeMaterial.name,
           excludeLearningItems,
+          ...(count ? { count } : {}),
         }),
       });
       const result = (await response.json()) as {
@@ -1999,21 +2012,51 @@ export default function Home() {
         }
       }
       setLearningLive(Boolean(result.live));
-    } catch {
+    } catch (error) {
       if (mode === "quiz") setGeneratedQuiz([]);
       if (mode === "flashcards") setGeneratedFlashcards([]);
-      setToast("Không thể tạo nội dung từ học liệu đang mở");
+      setToast(
+        error instanceof Error
+          ? error.message
+          : "Không thể tạo nội dung từ học liệu đang mở",
+      );
     } finally {
       setIsGeneratingLearning(false);
     }
   }
 
   async function createQuiz() {
+    const highlightCount = highlightEntries.filter(
+      (entry) => entry.materialId === activeMaterial.id,
+    ).length;
+    const noteCount = annotations.filter(
+      (annotation) =>
+        annotation.materialId === activeMaterial.id &&
+        annotation.kind === "note" &&
+        Boolean(annotation.text?.trim()),
+    ).length;
+    const minimumCount = Math.min(15, Math.max(1, highlightCount + noteCount));
+    const requested = window.prompt(
+      language === "vi"
+        ? `Bạn muốn tạo bao nhiêu câu hỏi? (từ ${minimumCount} đến 15)`
+        : `How many questions would you like? (from ${minimumCount} to 15)`,
+      String(Math.max(minimumCount, 5)),
+    );
+    if (requested === null) return;
+    const count = Number(requested);
+    if (!Number.isInteger(count) || count < minimumCount || count > 15) {
+      setToast(
+        language === "vi"
+          ? `Số câu phải nằm trong khoảng ${minimumCount}–15.`
+          : `The number must be between ${minimumCount} and 15.`,
+      );
+      return;
+    }
     resetQuiz();
     setGeneratedQuiz([]);
     setAgentTab("quiz");
     setRightOpen(true);
-    await requestLearningContent("quiz");
+    await requestLearningContent("quiz", count);
   }
 
   async function createFlashcards() {
