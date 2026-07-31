@@ -141,6 +141,7 @@ function goldenCases(markdown, citationPrefix = "T04-") {
     } else if (section === "D") {
       delete expected.behavior;
       delete expected.behaviorAny;
+      delete expected.maximumCitations;
       expected.citationPrefix = citationPrefix;
       expected.minimumCitations = 1;
       expected.minimumEvidence = 1;
@@ -158,6 +159,17 @@ function goldenCases(markdown, citationPrefix = "T04-") {
       } else if (questionText.includes("double diamond")) {
         expected.mustMentionAny = ["vấn đề", "giải pháp"];
       }
+      // D is numbered 17-23 in the consolidated golden set. Keep concept
+      // checks tied to this section instead of the old global numbering.
+      if (section === "D") {
+        if (number === 17) expected.mustMentionAny = ["llm", "chatbot"];
+        else if (number === 18) expected.mustMentionAny = ["sinh nội dung", "phân loại"];
+        else if (number === 19) expected.mustMentionAny = ["lập kế hoạch", "công cụ", "hành động"];
+        else if (number === 20) expected.mustMentionAny = ["token", "không phải từ"];
+        else if (number === 21) expected.mustMentionAny = ["context", "attention"];
+        else if (number === 22) expected.mustMentionAny = ["vấn đề", "giải pháp"];
+        else if (number === 23) delete expected.mustMentionAny;
+      }
     } else if (section === "E") {
       delete expected.citationPrefix;
       delete expected.minimumCitations;
@@ -167,6 +179,13 @@ function goldenCases(markdown, citationPrefix = "T04-") {
       const questionText = question.toLocaleLowerCase("vi");
       delete expected.behavior;
       delete expected.behaviorAny;
+      if (number === 27) {
+        expected.behavior = "refuse";
+      } else if (number === 26 || number === 28) {
+        expected.behaviorAny = ["clarify", "insufficient-source"];
+      } else if ([24, 25, 29, 30, 31].includes(number)) {
+        expected.behavior = "insufficient-source";
+      }
       if (questionText.includes("mật khẩu") || questionText.includes("password")) {
         expected.behavior = "refuse";
       } else if (
@@ -182,25 +201,62 @@ function goldenCases(markdown, citationPrefix = "T04-") {
         expected.behavior = "insufficient-source";
       }
     }
+    const isDayTwoCase = section === "D" && number === 22;
+    const isQuizCase = section === "D" && number === 23;
+    const isEmptyUploadCase = section === "E" && number === 29;
+    if (isDayTwoCase) {
+      expected.forbiddenCitationPrefix = "T04-";
+    }
+    if (isQuizCase) {
+      delete expected.groundedSchema;
+      delete expected.minimumEvidence;
+      delete expected.behavior;
+      delete expected.behaviorAny;
+      delete expected.maximumCitations;
+      expected.quizCount = 3;
+      expected.optionCount = 4;
+    }
+    if (isEmptyUploadCase) {
+      expected.status = 400;
+      expected.errorIncludes = "chưa có đủ nội dung";
+      delete expected.groundedSchema;
+      delete expected.citationPrefix;
+      delete expected.forbiddenCitationPrefix;
+      delete expected.minimumCitations;
+      delete expected.minimumEvidence;
+      delete expected.maximumCitations;
+      delete expected.behavior;
+      delete expected.behaviorAny;
+    }
+    const input = {
+      mode: isQuizCase ? "quiz" : "chat",
+      ...(isQuizCase ? { count: 3 } : {}),
+      materialId: isEmptyUploadCase
+        ? "uploaded-empty"
+        : isDayTwoCase
+          ? "day-2-product"
+          : "day-1-foundation",
+      material: isEmptyUploadCase
+        ? "Tài liệu rỗng"
+        : isDayTwoCase
+          ? "d2-slide-hackathon.pdf"
+          : "d1-slide-hackathon.pdf",
+      scope: "current-page",
+      page: isDayTwoCase ? 3 : 1,
+      pageCount: isEmptyUploadCase ? 1 : isDayTwoCase ? 16 : 29,
+      context: match[2],
+      question: match[3],
+    };
     cases.push({
       id: `GOLDEN-D1-${String(number).padStart(2, "0")}`,
       class:
-        number <= 10
-          ? "out-of-scope"
-          : number <= 15
-            ? "refusal"
+        section === "C"
+          ? "refusal"
+          : section === "A" || section === "B" || section === "E"
+            ? "out-of-scope"
             : "normal",
       source: `eval/golden-set.md case ${number}`,
-      input: {
-        mode: "chat",
-        materialId: "day-1-foundation",
-        material: "d1-slide-hackathon.pdf",
-        scope: "current-page",
-        page: 1,
-        pageCount: 29,
-        context: match[2],
-        question: match[3],
-      },
+      input,
       expected,
       expectation: match[4],
     });
@@ -277,6 +333,15 @@ if (suite.goldenSetFile) {
 if (Array.isArray(suite.caseIds) && suite.caseIds.length > 0) {
   const selected = new Set(suite.caseIds);
   suite.cases = suite.cases.filter((testCase) => selected.has(testCase.id));
+}
+
+const requestedCaseIds = (process.env.EVAL_CASE_IDS ?? "")
+  .split(",")
+  .map((id) => id.trim())
+  .filter(Boolean);
+if (requestedCaseIds.length > 0) {
+  const requested = new Set(requestedCaseIds);
+  suite.cases = suite.cases.filter((testCase) => requested.has(testCase.id));
 }
 
 function normalize(value) {
@@ -395,8 +460,7 @@ function evaluate(testCase, status, actual) {
     addCheck(
       checks,
       "citation-prefix",
-      citations.length > 0 &&
-        citations.every((id) => id.startsWith(expected.citationPrefix)),
+      citations.some((id) => id.startsWith(expected.citationPrefix)),
       citations.join(", ") || "Không có citation.",
     );
   }

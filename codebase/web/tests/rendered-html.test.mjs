@@ -72,6 +72,14 @@ test("ships the complete VLearn Focus learning flow", async () => {
   assert.match(page, /\/api\/agent/);
   assert.match(page, /\/api\/materials/);
   assert.match(page, /answer-evidence/);
+  assert.match(page, /function repairMojibake/);
+  assert.match(page, /function removePdfArtifacts/);
+  assert.match(page, /function cleanBotText/);
+  assert.match(page, /function isDiagonalPdfText/);
+  assert.match(page, /isDiagonalPdfText\(item\)/);
+  assert.match(page, /A\\s\*I\\s\+I\\s\*N/);
+  assert.match(page, /removePdfArtifacts\(text\)/);
+  assert.match(page, /new TextDecoder\("utf-8"/);
   assert.match(page, /Được nêu trực tiếp/);
   assert.match(page, /Không đủ thông tin/);
   assert.match(page, /type ViewerTool/);

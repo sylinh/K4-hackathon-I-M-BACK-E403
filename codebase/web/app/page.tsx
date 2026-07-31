@@ -169,6 +169,62 @@ type PageAnnotation = {
 
 const accentOrder: SlidePage["accent"][] = ["blue", "coral", "mint", "amber"];
 
+const cp1252ByteMap: Record<string, number> = {
+  "€": 0x80,
+  "‚": 0x82,
+  "ƒ": 0x83,
+  "„": 0x84,
+  "…": 0x85,
+  "†": 0x86,
+  "‡": 0x87,
+  "ˆ": 0x88,
+  "‰": 0x89,
+  "Š": 0x8a,
+  "‹": 0x8b,
+  "Œ": 0x8c,
+  "Ž": 0x8e,
+  "‘": 0x91,
+  "’": 0x92,
+  "“": 0x93,
+  "”": 0x94,
+  "•": 0x95,
+  "–": 0x96,
+  "—": 0x97,
+  "˜": 0x98,
+  "™": 0x99,
+  "š": 0x9a,
+  "›": 0x9b,
+  "œ": 0x9c,
+  "ž": 0x9e,
+  "Ÿ": 0x9f,
+};
+
+function repairMojibake(value: string) {
+  const isByteLike = (character: string) =>
+    character.charCodeAt(0) <= 0xff || character in cp1252ByteMap;
+  return value
+    .split(new RegExp(`([^${Object.keys(cp1252ByteMap).join("")}\\u0000-\\u00ff]+)`, "u"))
+    .map((part) => {
+      if (!/[ÃÂÄÆá»]/.test(part) || [...part].some((char) => !isByteLike(char))) {
+        return part;
+      }
+      try {
+        const bytes = Uint8Array.from(
+          [...part].map((character) =>
+            character.charCodeAt(0) <= 0xff
+              ? character.charCodeAt(0)
+              : cp1252ByteMap[character],
+          ),
+        );
+        const repaired = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+        return repaired.includes("�") ? part : repaired;
+      } catch {
+        return part;
+      }
+    })
+    .join("");
+}
+
 function bundledPdfPages(
   materialId: string,
   courseTitle: string,
@@ -364,6 +420,34 @@ const initialMessages: ChatMessage[] = [
 
 function cleanText(value: string) {
   return value.replace(/\s+/g, " ").trim();
+}
+
+function isDiagonalPdfText(item: { transform?: ArrayLike<number> }) {
+  if (!item.transform || item.transform.length < 2) return false;
+  const rawAngle =
+    (Math.atan2(Number(item.transform[1]), Number(item.transform[0])) * 180) /
+    Math.PI;
+  const angleFromHorizontal = Math.abs(
+    ((rawAngle + 90 + 360) % 180) - 90,
+  );
+  return angleFromHorizontal > 8 && angleFromHorizontal < 82;
+}
+
+function removePdfArtifacts(value: string) {
+  return value
+    .replace(
+      /\bA\s*I\s+I\s*N\s+A\s*C\s*T\s*I\s*O\s*N(?:\s*[-–—•|]\s*H\s*A\s*C\s*K\s*A\s*T\s*H\s*O\s*N)?\b/giu,
+      " ",
+    )
+    .replace(/[\uFFFD\u25A1\u25AF\u25FB]/g, " — ")
+    .replace(/\s+([,.;:!?])/g, "$1")
+    .replace(/(?:\s*—\s*){2,}/g, " — ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function cleanBotText(value: string) {
+  return removePdfArtifacts(repairMojibake(value));
 }
 
 function learningItemKey(value: string) {
@@ -811,11 +895,15 @@ async function loadPdfPageText(sourceUrl: string, pageNumber: number) {
       const pdfPage = await pdf.getPage(pageNumber);
       const content = await pdfPage.getTextContent();
       const text = content.items
-        .map((item) => ("str" in item ? cleanText(item.str) : ""))
+        .map((item) =>
+          "str" in item && !isDiagonalPdfText(item)
+            ? cleanText(item.str)
+            : "",
+        )
         .filter(Boolean)
         .join("\n");
       pdfPage.cleanup();
-      return `[Trang ${pageNumber}]\n${text}`;
+      return `[Trang ${pageNumber}]\n${removePdfArtifacts(text)}`;
     })
     .catch((error) => {
       documentPages?.delete(pageNumber);
@@ -839,7 +927,9 @@ async function renderPdfPage(
   const viewport = pdfPage.getViewport({ scale: renderScale });
   const content = await pdfPage.getTextContent();
   const blocks = content.items
-    .map((item) => ("str" in item ? item.str : ""))
+    .map((item) =>
+      "str" in item && !isDiagonalPdfText(item) ? item.str : "",
+    )
     .map(cleanText)
     .filter(Boolean);
   const canvas = document.createElement("canvas");
@@ -865,7 +955,13 @@ async function renderPdfPage(
   );
   renderedPage.previewDataUrl = canvas.toDataURL("image/jpeg", 0.86);
   renderedPage.textLayer = content.items.flatMap((item) => {
-    if (!("str" in item) || !cleanText(item.str)) return [];
+    if (
+      !("str" in item) ||
+      !cleanText(item.str) ||
+      isDiagonalPdfText(item)
+    ) {
+      return [];
+    }
     const matrix = pdfjs.Util.transform(viewport.transform, item.transform);
     const fontHeight = Math.max(1, Math.hypot(matrix[2], matrix[3]));
     const renderedWidth = Math.max(1, item.width * renderScale);
@@ -958,7 +1054,9 @@ async function extractPdfPages(file: File): Promise<SlidePage[]> {
       const viewport = pdfPage.getViewport({ scale: 1 });
       const content = await pdfPage.getTextContent();
       const blocks = content.items
-        .map((item) => ("str" in item ? item.str : ""))
+        .map((item) =>
+          "str" in item && !isDiagonalPdfText(item) ? item.str : "",
+        )
         .map(cleanText)
         .filter(Boolean);
       const ratio = viewport.width / viewport.height;
@@ -972,7 +1070,13 @@ async function extractPdfPages(file: File): Promise<SlidePage[]> {
       extractedPage.pdfSource = source;
       extractedPage.pdfPageNumber = pageNumber;
       extractedPage.textLayer = content.items.flatMap((item) => {
-        if (!("str" in item) || !cleanText(item.str)) return [];
+        if (
+          !("str" in item) ||
+          !cleanText(item.str) ||
+          isDiagonalPdfText(item)
+        ) {
+          return [];
+        }
         const matrix = pdfjs.Util.transform(viewport.transform, item.transform);
         const fontHeight = Math.max(1, Math.hypot(matrix[2], matrix[3]));
         const renderedWidth = Math.max(1, item.width);
@@ -1793,6 +1897,10 @@ export default function Home() {
       ...slidePage.points,
     ]
       .filter(Boolean)
+      .join("\n")
+      .split("\n")
+      .map(removePdfArtifacts)
+      .filter(Boolean)
       .join("\n");
   }
 
@@ -1872,7 +1980,7 @@ export default function Home() {
       ? language === "vi"
         ? `Trang ${pageNumber} · P${String(pageNumber).padStart(3, "0")}`
         : `Page ${pageNumber} · P${String(pageNumber).padStart(3, "0")}`
-      : citation;
+      : repairMojibake(citation);
   }
 
   function goToCitation(citation: string) {
@@ -3039,7 +3147,7 @@ export default function Home() {
                     </span>
                   )}
                   <div className="message-bubble">
-                    <p>{message.text}</p>
+                    <p>{cleanBotText(message.text)}</p>
                     {message.evidence && message.evidence.length > 0 && (
                       <div className="answer-evidence">
                         <strong>{language === "vi" ? "Căn cứ" : "Evidence"}</strong>
@@ -3051,7 +3159,7 @@ export default function Home() {
                             onClick={() => goToCitation(item.citation)}
                             title={citationLabel(item.citation)}
                           >
-                            {item.claim} — <span>{citationLabel(item.citation)}</span>
+                            {cleanBotText(item.claim)} — <span>{citationLabel(item.citation)}</span>
                           </button>
                         ))}
                       </div>
@@ -3059,13 +3167,13 @@ export default function Home() {
                     {message.confidence && (
                       <p className="answer-level">
                         <strong>{language === "vi" ? "Mức độ" : "Grounding"}</strong>
-                        {message.confidence}
+                        {cleanBotText(message.confidence)}
                       </p>
                     )}
                     {message.note && (
                       <p className="answer-note">
                         <strong>{language === "vi" ? "Lưu ý" : "Note"}</strong>
-                        {message.note}
+                        {cleanBotText(message.note)}
                       </p>
                     )}
                     {message.citations && message.citations.length > 0 ? (
