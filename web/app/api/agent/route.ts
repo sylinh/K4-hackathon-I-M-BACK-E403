@@ -655,6 +655,10 @@ function promptForMode(
     options.language === "vi"
       ? "Không tìm thấy đủ thông tin trong tài liệu để kết luận."
       : "The document does not contain enough information to reach a conclusion.";
+  const sourceLooksLikeQuestionBank =
+    /(?:cau hoi|de thi|dap an|question|answer key)/i.test(
+      normalizeTokens(`${pageContext}\n${sources}`).join(" "),
+    );
 
   const common = `Bạn là trợ lý hỏi-đáp dựa trên tài liệu "${options.material}".
 
@@ -700,9 +704,16 @@ ${sources}
   if (mode === "quiz") {
     return `${common}
 
- Tạo đúng ${options.count} câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Trả về JSON thuần:
-{"quiz":[{"question":"...","options":["...","...","...","..."],"answer":0,"explain":"...","citation":"${citationFormat}"}]}
-answer là chỉ số 0-3. Mỗi câu chỉ có một đáp án đúng và không dùng phương án vô lý.`;
+ Tạo đúng ${options.count} câu trắc nghiệm kiểm tra khả năng hiểu và áp dụng. Mỗi câu, đáp án đúng và phương án nhiễu đều phải trace được về cùng citation; không dùng câu mẫu chung chung.
+ ${
+   sourceLooksLikeQuestionBank
+     ? "TÀI LIỆU LÀ ĐỀ/CÂU HỎI: ưu tiên lấy từng câu hỏi có sẵn làm ý chính, diễn đạt lại khi cần; dùng đáp án trong tài liệu để xác định đáp án đúng, không tự thêm kiến thức ngoài nguồn."
+     : "TÀI LIỆU LÀ VĂN BẢN GIẢI THÍCH: biến các ý hoặc lập luận nêu rõ trong nguồn thành câu hỏi, không chép dài nguyên văn."
+ }
+ Không tạo hoặc biến đổi nội dung thành hướng dẫn phạm pháp, xâm phạm quyền riêng tư, vượt qua bảo mật, lừa đảo, hay gây hại; nếu nguồn chỉ có nội dung đó thì không tạo quiz.
+ Trả về JSON thuần:
+ {"quiz":[{"question":"...","options":["...","...","...","..."],"answer":0,"explain":"...","citation":"${citationFormat}"}]}
+ answer là chỉ số 0-3. Mỗi câu chỉ có một đáp án đúng và không dùng phương án vô lý.`;
   }
   if (mode === "flashcards") {
     return `${common}
@@ -832,11 +843,16 @@ type GeminiRuntimeEnv = {
   GEMINI_API_KEY_1?: string;
   GEMINI_API_KEY_2?: string;
   GEMINI_API_KEY_3?: string;
+  GEMINI_API_KEY_4?: string;
+  GEMINI_API_KEY_5?: string;
+  GEMINI_API_KEY_6?: string;
+  GEMINI_API_KEY_7?: string;
+  GEMINI_API_KEY_8?: string;
   GEMINI_MODEL?: string;
 };
 
 const geminiKeyCooldowns = new Map<number, number>();
-let activeGeminiKeyIndex = 0;
+let nextGeminiKeyIndex = 0;
 
 function geminiApiKeys(runtimeEnv: GeminiRuntimeEnv) {
   return Array.from(
@@ -845,6 +861,11 @@ function geminiApiKeys(runtimeEnv: GeminiRuntimeEnv) {
         runtimeEnv.GEMINI_API_KEY_1,
         runtimeEnv.GEMINI_API_KEY_2,
         runtimeEnv.GEMINI_API_KEY_3,
+        runtimeEnv.GEMINI_API_KEY_4,
+        runtimeEnv.GEMINI_API_KEY_5,
+        runtimeEnv.GEMINI_API_KEY_6,
+        runtimeEnv.GEMINI_API_KEY_7,
+        runtimeEnv.GEMINI_API_KEY_8,
         runtimeEnv.GEMINI_API_KEY,
       ]
         .map((key) => key?.trim())
@@ -868,13 +889,15 @@ function retryDelayMs(response: Response) {
 
 function availableGeminiKeyIndexes(keyCount: number) {
   const now = Date.now();
+  const startIndex = nextGeminiKeyIndex % keyCount;
+  nextGeminiKeyIndex = (startIndex + 1) % keyCount;
   return Array.from({ length: keyCount }, (_, offset) => {
-    return (activeGeminiKeyIndex + offset) % keyCount;
+    return (startIndex + offset) % keyCount;
   }).filter((index) => (geminiKeyCooldowns.get(index) ?? 0) <= now);
 }
 
 function moveToNextGeminiKey(keyIndex: number, keyCount: number) {
-  activeGeminiKeyIndex = (keyIndex + 1) % keyCount;
+  nextGeminiKeyIndex = (keyIndex + 1) % keyCount;
 }
 
 async function callGemini(prompt: string, mode: AgentMode, count: number) {
@@ -947,12 +970,14 @@ async function callGemini(prompt: string, mode: AgentMode, count: number) {
 
     const parsed = parseJsonResponse(extractGeminiText(await response.json()));
     if (parsed) {
-      activeGeminiKeyIndex = keyIndex;
       geminiKeyCooldowns.delete(keyIndex);
       return parsed;
     }
-    console.warn(`Gemini project ${keyIndex + 1} returned an invalid response`);
-    return null;
+    geminiKeyCooldowns.set(keyIndex, Date.now() + 5_000);
+    moveToNextGeminiKey(keyIndex, apiKeys.length);
+    console.warn(
+      `Gemini project ${keyIndex + 1} returned an invalid response; trying the next project`,
+    );
   }
   return null;
 }
@@ -1052,7 +1077,7 @@ export async function POST(request: Request) {
     const primaryIds = new Set(primaryChunks.map((chunk) => chunk.id));
 
     if (mode === "quiz") {
-      const quiz =
+      const quizIsGrounded =
         Array.isArray(liveResult?.quiz) &&
         liveResult.quiz.length === learningCount &&
         liveResult.quiz.every(
@@ -1061,13 +1086,25 @@ export async function POST(request: Request) {
             typeof item === "object" &&
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
-        )
-          ? liveResult.quiz.slice(0, learningCount)
-          : fallbackQuiz(primaryChunks, language, learningCount);
-      return Response.json({ quiz, live: Boolean(liveResult) });
+        );
+      if (!quizIsGrounded) {
+        return Response.json(
+          {
+            error:
+              language === "vi"
+                ? "Chưa đủ nội dung rõ và có căn cứ để tạo quiz chính xác. Hãy chọn trang rõ hơn hoặc thử lại khi AI sẵn sàng."
+                : "There is not enough clear, grounded content to create an accurate quiz. Choose a clearer page or try again when AI is available.",
+          },
+          { status: 422 },
+        );
+      }
+      return Response.json({
+        quiz: liveResult.quiz.slice(0, learningCount),
+        live: true,
+      });
     }
     if (mode === "flashcards") {
-      const flashcards =
+      const flashcardsAreGrounded =
         Array.isArray(liveResult?.flashcards) &&
         liveResult.flashcards.length === learningCount &&
         liveResult.flashcards.every(
@@ -1076,10 +1113,22 @@ export async function POST(request: Request) {
             typeof item === "object" &&
             typeof (item as { citation?: unknown }).citation === "string" &&
             primaryIds.has((item as { citation: string }).citation),
-        )
-          ? liveResult.flashcards.slice(0, learningCount)
-          : fallbackFlashcards(primaryChunks, language, learningCount);
-      return Response.json({ flashcards, live: Boolean(liveResult) });
+        );
+      if (!flashcardsAreGrounded) {
+        return Response.json(
+          {
+            error:
+              language === "vi"
+                ? "Chưa đủ nội dung rõ và có căn cứ để tạo thẻ nhớ chính xác. Hãy chọn trang rõ hơn hoặc thử lại khi AI sẵn sàng."
+                : "There is not enough clear, grounded content to create accurate flashcards. Choose a clearer page or try again when AI is available.",
+          },
+          { status: 422 },
+        );
+      }
+      return Response.json({
+        flashcards: liveResult.flashcards.slice(0, learningCount),
+        live: true,
+      });
     }
 
     const fallback = fallbackChat(
