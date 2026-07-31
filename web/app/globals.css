@@ -2700,6 +2700,90 @@ input:focus-visible {
   line-height: 1.6;
 }
 
+.chat-choice-modal {
+  width: min(430px, 100%);
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--paper);
+  box-shadow: var(--shadow-lg);
+}
+
+.chat-choice-message {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+}
+
+.quiz-choice-avatar {
+  width: 28px;
+  height: 28px;
+  margin-top: 2px;
+  border-radius: 9px;
+}
+
+.chat-choice-bubble {
+  min-width: 0;
+  flex: 1;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px 18px 18px;
+  background: var(--paper);
+  box-shadow: 0 3px 10px rgba(20, 33, 61, 0.08);
+}
+
+.chat-choice-bubble strong {
+  display: block;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.chat-choice-bubble p {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-choice-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.chat-choice-actions .primary-action {
+  width: auto;
+  margin-top: 0;
+}
+
+.quiz-count-field {
+  display: grid;
+  gap: 6px;
+  margin: 14px 0 0 37px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.quiz-count-field input {
+  width: 100%;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  outline: 0;
+  background: var(--canvas);
+  color: var(--ink);
+  font: inherit;
+  font-size: 15px;
+}
+
+.quiz-count-field input:focus {
+  border-color: #7faee9;
+  box-shadow: 0 0 0 3px rgba(23, 105, 232, 0.09);
+}
+
 .modal-actions {
   display: flex;
   justify-content: flex-end;

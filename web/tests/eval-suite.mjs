@@ -526,6 +526,10 @@ const pointer = {
   summary: report.summary,
 };
 
+const resultsIndexPath = resolve(evalDir, "RESULTS.md");
+const resultsIndexHeader = `# Eval results\n\n| Version | Run | Total | Passed | Pass rate | Source isolation | Out-of-scope | Live | Quality bar | Report |\n|---|---|---:|---:|---:|---:|---:|---:|---|---|\n`;
+const resultsIndexRow = `| ${suiteVersion} | ${runId} | ${report.summary.total} | ${report.summary.passed} | ${(report.summary.passRate * 100).toFixed(1)}% | ${(report.summary.sourceIsolationRate * 100).toFixed(1)}% | ${(report.summary.outOfScopePassRate * 100).toFixed(1)}% | ${report.summary.liveResponses}/${report.summary.total} | ${report.summary.qualityBarPassed ? "PASSED" : "NOT MET"} | [JSON](results/${reportRelativePath}) |\n`;
+
 await mkdir(versionResultsDir, { recursive: true });
 await writeFile(
   reportPath,
@@ -542,6 +546,17 @@ await writeFile(
   `${JSON.stringify(pointer, null, 2)}\n`,
   "utf8",
 );
+let resultsIndex = resultsIndexHeader;
+try {
+  resultsIndex = await readFile(resultsIndexPath, "utf8");
+} catch {
+  // The index is created on the first run when it does not exist yet.
+}
+if (!resultsIndex.includes(`results/${reportRelativePath}`)) {
+  if (!resultsIndex.endsWith("\n")) resultsIndex += "\n";
+  resultsIndex += resultsIndexRow;
+  await writeFile(resultsIndexPath, resultsIndex, "utf8");
+}
 
 console.log(
   `\n${passed}/${results.length} PASS (${(passRate * 100).toFixed(1)}%)`,

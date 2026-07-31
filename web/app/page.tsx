@@ -1200,6 +1200,9 @@ export default function Home() {
   const [uploadMessage, setUploadMessage] = useState("");
   const [showPaste, setShowPaste] = useState(false);
   const [pasteValue, setPasteValue] = useState("");
+  const [showQuizCountModal, setShowQuizCountModal] = useState(false);
+  const [quizCountInput, setQuizCountInput] = useState("5");
+  const [showEndQuizPrompt, setShowEndQuizPrompt] = useState(false);
   const [isDark, setIsDark] = useState(false);
   const [language, setLanguage] = useState<InterfaceLanguage>("vi");
   const [preferencesReady, setPreferencesReady] = useState(false);
@@ -1225,6 +1228,7 @@ export default function Home() {
   const viewerRef = useRef<HTMLDivElement>(null);
   const moreToolsRef = useRef<HTMLDivElement>(null);
   const selectionHandledRef = useRef(false);
+  const quizPromptMaterialRef = useRef<string | null>(null);
   const agentResizeStartRef = useRef({ clientX: 0, width: 372 });
 
   const updateBundledPage = useCallback(
@@ -1383,6 +1387,8 @@ export default function Home() {
 
   useEffect(() => {
     if (viewerRef.current) viewerRef.current.scrollTop = 0;
+    setShowEndQuizPrompt(false);
+    quizPromptMaterialRef.current = null;
   }, [activeMaterialId]);
 
   function selectMaterial(material: Material) {
@@ -1635,6 +1641,17 @@ export default function Home() {
     });
 
     setPageIndex((current) => (current === closestIndex ? current : closestIndex));
+
+    const reachedDocumentEnd =
+      container.scrollTop + container.clientHeight >= container.scrollHeight - 24;
+    if (
+      reachedDocumentEnd &&
+      closestIndex === activeMaterial.pages.length - 1 &&
+      quizPromptMaterialRef.current !== activeMaterial.id
+    ) {
+      quizPromptMaterialRef.current = activeMaterial.id;
+      setShowEndQuizPrompt(true);
+    }
   }
 
   async function storeFile(file: File) {
@@ -2025,7 +2042,7 @@ export default function Home() {
     }
   }
 
-  async function createQuiz() {
+  function quizMinimumCount() {
     const highlightCount = highlightEntries.filter(
       (entry) => entry.materialId === activeMaterial.id,
     ).length;
@@ -2035,15 +2052,18 @@ export default function Home() {
         annotation.kind === "note" &&
         Boolean(annotation.text?.trim()),
     ).length;
-    const minimumCount = Math.min(15, Math.max(1, highlightCount + noteCount));
-    const requested = window.prompt(
-      language === "vi"
-        ? `Bạn muốn tạo bao nhiêu câu hỏi? (từ ${minimumCount} đến 15)`
-        : `How many questions would you like? (from ${minimumCount} to 15)`,
-      String(Math.max(minimumCount, 5)),
-    );
-    if (requested === null) return;
-    const count = Number(requested);
+    return Math.min(15, Math.max(1, highlightCount + noteCount));
+  }
+
+  function createQuiz() {
+    const minimumCount = quizMinimumCount();
+    setQuizCountInput(String(Math.max(minimumCount, 5)));
+    setShowQuizCountModal(true);
+  }
+
+  async function submitQuizCreation() {
+    const minimumCount = quizMinimumCount();
+    const count = Number(quizCountInput);
     if (!Number.isInteger(count) || count < minimumCount || count > 15) {
       setToast(
         language === "vi"
@@ -2052,6 +2072,7 @@ export default function Home() {
       );
       return;
     }
+    setShowQuizCountModal(false);
     resetQuiz();
     setGeneratedQuiz([]);
     setAgentTab("quiz");
@@ -3438,6 +3459,108 @@ export default function Home() {
                 disabled={!pasteValue.trim()}
               >
                 <Sparkles size={16} /> Tạo không gian học
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showEndQuizPrompt && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="chat-choice-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="end-quiz-title"
+          >
+            <div className="chat-choice-message">
+              <span className="message-avatar quiz-choice-avatar">
+                <Sparkles size={15} />
+              </span>
+              <div className="chat-choice-bubble">
+                <strong id="end-quiz-title">
+                  {language === "vi" ? "Bạn đã xem hết slide" : "You reached the end"}
+                </strong>
+                <p>
+                  {language === "vi"
+                    ? "Bạn có muốn làm bài trắc nghiệm để ôn lại nội dung vừa học không?"
+                    : "Would you like to take a quiz to review what you just learned?"}
+                </p>
+              </div>
+            </div>
+            <div className="chat-choice-actions">
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowEndQuizPrompt(false)}
+              >
+                {language === "vi" ? "Để sau" : "Not now"}
+              </button>
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => {
+                  setShowEndQuizPrompt(false);
+                  createQuiz();
+                }}
+              >
+                <CircleHelp size={15} />
+                {language === "vi" ? "Làm quiz" : "Take quiz"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {showQuizCountModal && (
+        <div className="modal-backdrop" role="presentation">
+          <section
+            className="chat-choice-modal quiz-count-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="quiz-count-title"
+          >
+            <div className="chat-choice-message">
+              <span className="message-avatar quiz-choice-avatar">
+                <CircleHelp size={15} />
+              </span>
+              <div className="chat-choice-bubble">
+                <strong id="quiz-count-title">
+                  {language === "vi" ? "Tạo quiz theo ngữ cảnh" : "Create a contextual quiz"}
+                </strong>
+                <p>
+                  {language === "vi"
+                    ? `Chọn số câu hỏi (từ ${quizMinimumCount()} đến 15).`
+                    : `Choose the number of questions (from ${quizMinimumCount()} to 15).`}
+                </p>
+              </div>
+            </div>
+            <label className="quiz-count-field">
+              <span>{language === "vi" ? "Số câu hỏi" : "Questions"}</span>
+              <input
+                type="number"
+                min={quizMinimumCount()}
+                max={15}
+                value={quizCountInput}
+                onChange={(event) => setQuizCountInput(event.target.value)}
+                autoFocus
+              />
+            </label>
+            <div className="chat-choice-actions">
+              <button
+                type="button"
+                className="secondary-action"
+                onClick={() => setShowQuizCountModal(false)}
+              >
+                {language === "vi" ? "Huỷ" : "Cancel"}
+              </button>
+              <button
+                type="button"
+                className="primary-action"
+                onClick={() => void submitQuizCreation()}
+              >
+                <CircleHelp size={15} />
+                {language === "vi" ? "Tạo quiz" : "Create quiz"}
               </button>
             </div>
           </section>
